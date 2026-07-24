@@ -1,0 +1,11 @@
+.git
+.github
+.gitignore
+.vscode
+.idea
+*.md
+!README.md
+node_modules/
+.next/
+.env
+.env.*
