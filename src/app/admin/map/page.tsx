@@ -76,7 +76,7 @@ function buildGraph(
     id: "ingress",
     label: "Nginx Ingress",
     type: "ingress",
-    metadata: { host: "workspaces.fordham.id.au", ports: "443" },
+    metadata: { host: "workspaces.example.com", ports: "443" },
   });
   nodes.push({
     id: "frontend",

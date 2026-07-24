@@ -39,7 +39,7 @@ Open http://localhost:3000.
 Create a `.env.local` file (git-ignored) to proxy requests to a remote API:
 
 ```bash
-echo 'API_URL=https://api.workspaces.fordham.id.au' > .env.local
+echo 'API_URL=https://api.workspaces.example.com' > .env.local
 npm run dev
 ```
 
