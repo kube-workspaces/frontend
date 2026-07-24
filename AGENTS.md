@@ -35,7 +35,7 @@ npm run lint       # eslint
 
 ## Docker Image
 
-Published to: `kubeworkspaces/frontend`
+Published to: `ghcr.io/kube-workspaces/frontend`
 
 ## CI
 
