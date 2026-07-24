@@ -1,0 +1,251 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ========================================================================
+   Design Token System — Kube Workspaces
+   
+   Three color themes (teal, indigo, rose) x two modes (light, dark).
+   The default theme is teal. Theme class is applied to <html>.
+   ======================================================================== */
+
+/* --- Default / Teal Theme (Light) --- */
+:root,
+:root.theme-teal {
+  --color-primary: oklch(0.55 0.15 180);
+  --color-primary-hover: oklch(0.48 0.14 180);
+  --color-primary-active: oklch(0.43 0.13 180);
+  --color-primary-subtle: oklch(0.95 0.03 180);
+  --color-primary-subtle-hover: oklch(0.92 0.04 180);
+  --color-primary-foreground: #ffffff;
+  --color-primary-muted: oklch(0.55 0.12 180 / 0.15);
+
+  --color-surface: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-hover: oklch(0.98 0.002 180);
+  --color-surface-inset: oklch(0.97 0.003 180);
+
+  --color-border: oklch(0.90 0.005 180);
+  --color-border-subtle: oklch(0.93 0.003 180);
+
+  --color-text: oklch(0.20 0.02 240);
+  --color-text-secondary: oklch(0.45 0.01 240);
+  --color-text-muted: oklch(0.55 0.01 240);
+  --color-text-inverse: #ffffff;
+
+  --color-bg: #ffffff;
+  --color-bg-page: oklch(0.985 0.002 180);
+
+  --shadow-primary: oklch(0.55 0.15 180 / 0.25);
+  --shadow-elevation: oklch(0.20 0.02 240 / 0.06);
+}
+
+/* --- Teal Theme (Dark) --- */
+:root.dark,
+:root.dark.theme-teal {
+  --color-primary: oklch(0.70 0.14 180);
+  --color-primary-hover: oklch(0.76 0.13 180);
+  --color-primary-active: oklch(0.80 0.12 180);
+  --color-primary-subtle: oklch(0.22 0.04 180);
+  --color-primary-subtle-hover: oklch(0.26 0.05 180);
+  --color-primary-foreground: oklch(0.13 0.02 180);
+  --color-primary-muted: oklch(0.70 0.14 180 / 0.12);
+
+  --color-surface: oklch(0.16 0.01 220);
+  --color-surface-elevated: oklch(0.19 0.012 220);
+  --color-surface-hover: oklch(0.21 0.013 220);
+  --color-surface-inset: oklch(0.14 0.008 220);
+
+  --color-border: oklch(0.27 0.012 220);
+  --color-border-subtle: oklch(0.23 0.01 220);
+
+  --color-text: oklch(0.93 0.005 220);
+  --color-text-secondary: oklch(0.65 0.01 220);
+  --color-text-muted: oklch(0.50 0.01 220);
+  --color-text-inverse: oklch(0.13 0.02 180);
+
+  --color-bg: oklch(0.13 0.012 220);
+  --color-bg-page: oklch(0.11 0.01 220);
+
+  --shadow-primary: oklch(0.70 0.14 180 / 0.20);
+  --shadow-elevation: oklch(0 0 0 / 0.3);
+}
+
+/* --- Indigo Theme (Light) --- */
+:root.theme-indigo {
+  --color-primary: oklch(0.55 0.18 270);
+  --color-primary-hover: oklch(0.48 0.17 270);
+  --color-primary-active: oklch(0.43 0.16 270);
+  --color-primary-subtle: oklch(0.95 0.03 270);
+  --color-primary-subtle-hover: oklch(0.92 0.04 270);
+  --color-primary-foreground: #ffffff;
+  --color-primary-muted: oklch(0.55 0.18 270 / 0.12);
+
+  --color-surface: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-hover: oklch(0.98 0.003 270);
+  --color-surface-inset: oklch(0.97 0.004 270);
+
+  --color-border: oklch(0.90 0.006 270);
+  --color-border-subtle: oklch(0.93 0.004 270);
+
+  --color-text: oklch(0.20 0.02 270);
+  --color-text-secondary: oklch(0.45 0.01 260);
+  --color-text-muted: oklch(0.55 0.01 260);
+  --color-text-inverse: #ffffff;
+
+  --color-bg: #ffffff;
+  --color-bg-page: oklch(0.985 0.003 270);
+
+  --shadow-primary: oklch(0.55 0.18 270 / 0.25);
+  --shadow-elevation: oklch(0.20 0.02 270 / 0.06);
+}
+
+/* --- Indigo Theme (Dark) --- */
+:root.dark.theme-indigo {
+  --color-primary: oklch(0.72 0.15 270);
+  --color-primary-hover: oklch(0.78 0.14 270);
+  --color-primary-active: oklch(0.82 0.12 270);
+  --color-primary-subtle: oklch(0.22 0.05 270);
+  --color-primary-subtle-hover: oklch(0.26 0.06 270);
+  --color-primary-foreground: oklch(0.13 0.03 270);
+  --color-primary-muted: oklch(0.72 0.15 270 / 0.12);
+
+  --color-surface: oklch(0.16 0.012 265);
+  --color-surface-elevated: oklch(0.19 0.014 265);
+  --color-surface-hover: oklch(0.21 0.015 265);
+  --color-surface-inset: oklch(0.14 0.01 265);
+
+  --color-border: oklch(0.27 0.015 265);
+  --color-border-subtle: oklch(0.23 0.012 265);
+
+  --color-text: oklch(0.93 0.005 265);
+  --color-text-secondary: oklch(0.65 0.01 265);
+  --color-text-muted: oklch(0.50 0.01 265);
+  --color-text-inverse: oklch(0.13 0.03 270);
+
+  --color-bg: oklch(0.13 0.014 265);
+  --color-bg-page: oklch(0.11 0.012 265);
+
+  --shadow-primary: oklch(0.72 0.15 270 / 0.20);
+  --shadow-elevation: oklch(0 0 0 / 0.3);
+}
+
+/* --- Rose Theme (Light) --- */
+:root.theme-rose {
+  --color-primary: oklch(0.55 0.2 10);
+  --color-primary-hover: oklch(0.48 0.19 10);
+  --color-primary-active: oklch(0.43 0.18 10);
+  --color-primary-subtle: oklch(0.96 0.02 10);
+  --color-primary-subtle-hover: oklch(0.93 0.03 10);
+  --color-primary-foreground: #ffffff;
+  --color-primary-muted: oklch(0.55 0.2 10 / 0.10);
+
+  --color-surface: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-surface-hover: oklch(0.98 0.003 10);
+  --color-surface-inset: oklch(0.97 0.004 10);
+
+  --color-border: oklch(0.90 0.006 10);
+  --color-border-subtle: oklch(0.93 0.004 10);
+
+  --color-text: oklch(0.20 0.015 350);
+  --color-text-secondary: oklch(0.45 0.01 350);
+  --color-text-muted: oklch(0.55 0.01 350);
+  --color-text-inverse: #ffffff;
+
+  --color-bg: #ffffff;
+  --color-bg-page: oklch(0.985 0.002 10);
+
+  --shadow-primary: oklch(0.55 0.2 10 / 0.25);
+  --shadow-elevation: oklch(0.20 0.015 350 / 0.06);
+}
+
+/* --- Rose Theme (Dark) --- */
+:root.dark.theme-rose {
+  --color-primary: oklch(0.72 0.16 10);
+  --color-primary-hover: oklch(0.78 0.15 10);
+  --color-primary-active: oklch(0.82 0.13 10);
+  --color-primary-subtle: oklch(0.22 0.04 10);
+  --color-primary-subtle-hover: oklch(0.26 0.05 10);
+  --color-primary-foreground: oklch(0.13 0.03 10);
+  --color-primary-muted: oklch(0.72 0.16 10 / 0.12);
+
+  --color-surface: oklch(0.16 0.01 350);
+  --color-surface-elevated: oklch(0.19 0.012 350);
+  --color-surface-hover: oklch(0.21 0.013 350);
+  --color-surface-inset: oklch(0.14 0.008 350);
+
+  --color-border: oklch(0.27 0.012 350);
+  --color-border-subtle: oklch(0.23 0.01 350);
+
+  --color-text: oklch(0.93 0.005 350);
+  --color-text-secondary: oklch(0.65 0.01 350);
+  --color-text-muted: oklch(0.50 0.01 350);
+  --color-text-inverse: oklch(0.13 0.03 10);
+
+  --color-bg: oklch(0.13 0.012 350);
+  --color-bg-page: oklch(0.11 0.01 350);
+
+  --shadow-primary: oklch(0.72 0.16 10 / 0.20);
+  --shadow-elevation: oklch(0 0 0 / 0.3);
+}
+
+/* ========================================================================
+   Tailwind Theme Integration — maps CSS variables to Tailwind utilities
+   ======================================================================== */
+
+@theme inline {
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
+/* ========================================================================
+   Base Styles
+   ======================================================================== */
+
+html {
+  font-size: 15.5px;
+}
+
+body {
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-bg-page);
+  color: var(--color-text);
+}
+
+/* ========================================================================
+   Utility Classes for Personality
+   ======================================================================== */
+
+/* Primary button gradient */
+.btn-primary-gradient {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+}
+
+.btn-primary-gradient:hover {
+  background: linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary-active) 100%);
+}
+
+/* Subtle glow effect for focused elements */
+.ring-primary-glow {
+  box-shadow: 0 0 0 3px var(--color-primary-muted);
+}
+
+/* Active nav indicator bar */
+.nav-active-indicator {
+  position: relative;
+}
+
+.nav-active-indicator::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0.5rem;
+  right: 0.5rem;
+  height: 2px;
+  background: var(--color-primary);
+  border-radius: 1px;
+}
