@@ -13,6 +13,8 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+LABEL org.opencontainers.image.source="https://github.com/kube-workspaces/frontend"
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
