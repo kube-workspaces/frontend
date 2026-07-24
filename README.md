@@ -92,6 +92,15 @@ The Next.js server proxies these paths to the API service:
 | `src/app/layout.tsx` | Root layout with providers |
 | `next.config.ts` | Rewrites configuration |
 
+## Related Repositories
+
+| Repository | Description |
+|------------|-------------|
+| [kube-workspaces/controller](https://github.com/kube-workspaces/controller) | Kubernetes controller (CRD reconciliation) |
+| [kube-workspaces/api](https://github.com/kube-workspaces/api) | REST API service |
+| [kube-workspaces/proxy](https://github.com/kube-workspaces/proxy) | Workspace reverse proxy |
+| [kube-workspaces/deploy](https://github.com/kube-workspaces/deploy) | Deployment manifests and documentation |
+
 ## License
 
 Apache License 2.0
