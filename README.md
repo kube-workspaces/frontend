@@ -2,6 +2,17 @@
 
 Next.js web UI for managing container-based workspaces in Kubernetes.
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Release](https://img.shields.io/github/v/release/kube-workspaces/frontend?logo=github)](https://github.com/kube-workspaces/frontend/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/kube-workspaces/frontend/ci.yml?branch=main&label=CI&logo=github)](https://github.com/kube-workspaces/frontend/actions/workflows/ci.yml)
+[![Docker](https://img.shields.io/github/actions/workflow/status/kube-workspaces/frontend/docker.yml?branch=main&label=Docker%20image&logo=docker&logoColor=white)](https://github.com/kube-workspaces/frontend/actions/workflows/docker.yml)
+[![GHCR Image](https://img.shields.io/badge/image-ghcr.io%2Fkube-workspaces%2Ffrontend-2496ED?logo=docker&logoColor=white)](https://github.com/kube-workspaces/frontend/pkgs/container/frontend)
+
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white)](https://nextjs.org)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tailwind CSS v4](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+
 ## Pages
 
 | Route | Description |
