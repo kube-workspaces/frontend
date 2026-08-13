@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Kube Workspaces",
   "short_name": "KubeWS",
   "description": "Manage container-based workspaces in Kubernetes",
