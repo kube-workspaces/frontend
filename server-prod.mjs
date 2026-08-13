@@ -151,6 +151,7 @@ readyPromise.then(() => {
       res.writeHead(200, {
         "Content-Type": "application/javascript",
         "Service-Worker-Allowed": "/",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
       });
       res.end("// no-op service worker for proxied workspaces\nself.addEventListener('install', () => self.skipWaiting());\nself.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));\n");
       return;

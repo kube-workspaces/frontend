@@ -5,6 +5,7 @@ import { Providers } from "@/components/providers";
 import { AuthGate } from "@/components/auth/auth-gate";
 import { NavBar } from "@/components/nav-bar";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
+import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -79,6 +80,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-[var(--color-bg-page)] text-[var(--color-text)] font-sans">
+        <ServiceWorkerRegistrar />
         <Providers>
           <NavBar />
           <main className="flex-1">
