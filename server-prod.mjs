@@ -90,19 +90,27 @@ function getProxyPrefix(req) {
 // path prefixes — anything else is assumed to be an escaped workspace request.
 const FRONTEND_PATH_PREFIXES = [
   "/workspaces", "/admin", "/auth", "/api", "/login",
-  "/volumes", "/profile",
+  "/volumes", "/profile", "/change-password", "/docs",
   "/_next", "/favicon", "/manifest", "/sw.js",
   "/images", "/icons",
   "/icon-192.png", "/icon-512.png", "/icon-maskable.png",
   "/icon.svg", "/apple-touch-icon.png",
 ];
-function isEscapedProxyPath(pathname) {
+function isEscapedProxyPath(pathname, req) {
   if (pathname === "/" || pathname === "") return false;
   for (const prefix of FRONTEND_PATH_PREFIXES) {
     if (pathname === prefix || pathname.startsWith(prefix + "/") || pathname.startsWith(prefix + ".")) {
       return false;
     }
   }
+  // Don't treat top-level page navigations as escaped requests.
+  // When the user follows a link from a workspace to an app route, the
+  // Referer still points at the workspace but the browser is navigating
+  // to a new document — not fetching a workspace sub-resource.
+  // Sec-Fetch-Dest is authoritative in modern browsers; Accept is the fallback.
+  const secFetchDest = req.headers["sec-fetch-dest"];
+  if (secFetchDest === "document") return false;
+  if (!secFetchDest && (req.headers["accept"] || "").startsWith("text/html")) return false;
   return true;
 }
 
@@ -171,7 +179,7 @@ readyPromise.then(() => {
     // Only forward if the path doesn't look like a frontend route.
     // Frontend routes: /, /_next/*, /workspaces*, /admin*, /auth*, /api*, /favicon*, etc.
     const proxyPrefix = getProxyPrefix(req);
-    if (proxyPrefix && isEscapedProxyPath(pathname)) {
+    if (proxyPrefix && isEscapedProxyPath(pathname, req)) {
       req.url = proxyPrefix + req.url;
       req.headers["x-forwarded-host"] = req.headers.host || `${hostname}:${port}`;
       req.headers["x-forwarded-proto"] = "https";
@@ -194,7 +202,7 @@ readyPromise.then(() => {
 
     // Escaped WebSocket (e.g. /websockify from KasmVNC)
     const proxyPrefix = getProxyPrefix(req);
-    if (proxyPrefix && isEscapedProxyPath(pathname)) {
+    if (proxyPrefix && isEscapedProxyPath(pathname, req)) {
       req.url = proxyPrefix + req.url;
       req.headers["x-forwarded-host"] = req.headers.host || `${hostname}:${port}`;
       wsProxy.ws(req, socket, head);
