@@ -18,6 +18,16 @@ LABEL org.opencontainers.image.source="https://github.com/kube-workspaces/fronte
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Build information, so a running container can be identified without inspecting
+# the image digest. Set in the runner stage rather than the builder so a rebuild
+# for a new commit does not invalidate the npm/Next.js build cache.
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+ENV APP_VERSION=$VERSION
+ENV APP_COMMIT=$COMMIT
+ENV APP_BUILD_DATE=$BUILD_DATE
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
