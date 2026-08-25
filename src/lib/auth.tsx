@@ -10,6 +10,7 @@ export interface AuthUser {
   namespaces?: string[];
   personalNamespace?: string;
   avatarURL?: string;
+  mustChangePassword?: boolean;
 }
 
 export interface AuthConfig {
@@ -22,6 +23,9 @@ export interface AuthConfig {
   registration?: {
     autoProvision: boolean;
   };
+  localAuth?: {
+    enabled: boolean;
+  };
 }
 
 interface AuthContextType {
@@ -32,6 +36,8 @@ interface AuthContextType {
   isAdmin: boolean;
   authEnabled: boolean;
   login: () => void;
+  loginLocal: (email: string, password: string) => Promise<{ ok: boolean; error?: string; mustChangePassword?: boolean }>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -44,6 +50,8 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   authEnabled: false,
   login: () => {},
+  loginLocal: async () => ({ ok: false, error: "not initialized" }),
+  changePassword: async () => ({ ok: false, error: "not initialized" }),
   logout: async () => {},
   refresh: async () => {},
 });
@@ -86,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             namespaces: data.namespaces,
             personalNamespace: data.personalNamespace,
             avatarURL: data.avatarURL,
+            mustChangePassword: data.mustChangePassword,
           });
           return true;
         }
@@ -117,6 +126,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/auth/login";
   }, []);
 
+  const loginLocal = useCallback(async (email: string, password: string) => {
+    try {
+      const res = await fetch("/auth/login/local", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: data.message || "Invalid email or password" };
+      }
+      await fetchMe();
+      return { ok: true, mustChangePassword: !!data.mustChangePassword };
+    } catch {
+      return { ok: false, error: "Failed to sign in" };
+    }
+  }, [fetchMe]);
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    try {
+      const res = await fetch("/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: data.message || "Failed to change password" };
+      }
+      await fetchMe();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Failed to change password" };
+    }
+  }, [fetchMe]);
+
   const logout = useCallback(async () => {
     try {
       await fetch("/auth/logout", {
@@ -143,6 +190,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       authEnabled,
       login,
+      loginLocal,
+      changePassword,
       logout,
       refresh,
     }}>

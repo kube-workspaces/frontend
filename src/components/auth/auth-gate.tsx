@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, authEnabled, loading } = useAuth();
+  const { user, isAuthenticated, authEnabled, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -18,6 +18,15 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [loading, authEnabled, isAuthenticated, pathname, router]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (!isAuthenticated) return;
+    if (!user?.mustChangePassword) return;
+    if (pathname === "/change-password") return;
+
+    router.push("/change-password");
+  }, [loading, isAuthenticated, user, pathname, router]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -27,6 +36,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (authEnabled && !isAuthenticated && pathname !== "/login") {
+    return null;
+  }
+
+  if (isAuthenticated && user?.mustChangePassword && pathname !== "/change-password") {
     return null;
   }
 

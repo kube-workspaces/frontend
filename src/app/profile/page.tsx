@@ -3,6 +3,7 @@
 import { useAuth } from "@/lib/auth";
 import { useNamespace } from "@/lib/namespace";
 import { UserAvatar } from "@/components/user-avatar";
+import Link from "next/link";
 
 export default function ProfilePage() {
   const { user, authConfig, isAdmin } = useAuth();
@@ -50,6 +51,16 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+        {authConfig?.localAuth?.enabled && (
+          <div className="px-6 py-3 border-t border-gray-100 dark:border-gray-800">
+            <Link
+              href="/change-password"
+              className="text-xs text-[var(--color-primary)] hover:underline"
+            >
+              Change password
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Namespace Info */}

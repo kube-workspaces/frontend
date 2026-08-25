@@ -12,6 +12,10 @@ interface UserCR {
     disabled?: boolean;
     groups?: string[];
     namespaceAccess?: Array<{ namespace: string; role: string }>;
+    localAuth?: {
+      enabled: boolean;
+      mustChangePassword?: boolean;
+    };
   };
   status?: {
     personalNamespace?: string;
@@ -31,12 +35,14 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: "", displayName: "", role: "editor" });
+  const [createForm, setCreateForm] = useState({ email: "", displayName: "", role: "editor", authMethod: "oidc", password: "" });
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [namespaces, setNamespaces] = useState<AdminNamespace[]>([]);
   const [editAccess, setEditAccess] = useState<Array<{ namespace: string; role: string }>>([]);
   const [saving, setSaving] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState<{ email: string; password: string } | null>(null);
+  const [resettingPassword, setResettingPassword] = useState<string | null>(null);
 
   const fetchNamespaces = useCallback(async () => {
     try {
@@ -96,23 +102,54 @@ export default function AdminUsersPage() {
     if (!createForm.email) return;
     setCreating(true);
     try {
+      const body: Record<string, string> = {
+        email: createForm.email,
+        displayName: createForm.displayName,
+        role: createForm.role,
+        authMethod: createForm.authMethod,
+      };
+      if (createForm.authMethod === "local" && createForm.password) {
+        body.password = createForm.password;
+      }
       const res = await fetch(`${API_BASE}/admin/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(createForm),
+        body: JSON.stringify(body),
         credentials: "include",
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to create user");
       }
       setShowCreate(false);
-      setCreateForm({ email: "", displayName: "", role: "editor" });
+      if (createForm.authMethod === "local" && data.password) {
+        setGeneratedPassword({ email: createForm.email, password: data.password });
+      }
+      setCreateForm({ email: "", displayName: "", role: "editor", authMethod: "oidc", password: "" });
       await fetchUsers();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create user");
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleResetPassword(name: string, email: string) {
+    if (!confirm(`Reset password for "${email}"? A new random password will be generated.`)) return;
+    setResettingPassword(name);
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${name}/reset-password`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to reset password");
+      setGeneratedPassword({ email, password: data.password });
+      await fetchUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reset password");
+    } finally {
+      setResettingPassword(null);
     }
   }
 
@@ -256,6 +293,23 @@ export default function AdminUsersPage() {
                 <option value="editor">Editor</option>
                 <option value="admin">Admin</option>
               </select>
+              <select
+                value={createForm.authMethod}
+                onChange={(e) => setCreateForm({ ...createForm, authMethod: e.target.value })}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              >
+                <option value="oidc">SSO (OIDC)</option>
+                <option value="local">Local password</option>
+              </select>
+              {createForm.authMethod === "local" && (
+                <input
+                  type="text"
+                  placeholder="Password (leave blank to auto-generate)"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                  className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white sm:col-span-2"
+                />
+              )}
             </div>
             <div className="mt-3 flex gap-2">
               <button
@@ -292,6 +346,7 @@ export default function AdminUsersPage() {
                   <th className="text-left py-2 px-3 font-medium text-gray-500 dark:text-gray-400">Email</th>
                   <th className="text-left py-2 px-3 font-medium text-gray-500 dark:text-gray-400">Name</th>
                   <th className="text-left py-2 px-3 font-medium text-gray-500 dark:text-gray-400">Role</th>
+                  <th className="text-left py-2 px-3 font-medium text-gray-500 dark:text-gray-400">Auth</th>
                   <th className="text-left py-2 px-3 font-medium text-gray-500 dark:text-gray-400">Namespaces</th>
                   <th className="text-left py-2 px-3 font-medium text-gray-500 dark:text-gray-400">Status</th>
                   <th className="text-left py-2 px-3 font-medium text-gray-500 dark:text-gray-400">Last Login</th>
@@ -311,6 +366,22 @@ export default function AdminUsersPage() {
                       <span className={`inline-block px-1.5 py-0.5 text-xs font-medium rounded ${roleColors[user.spec?.role || "viewer"]}`}>
                         {user.spec?.role}
                       </span>
+                    </td>
+                    <td className="py-2 px-3 text-xs">
+                      {user.spec?.localAuth?.enabled ? (
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          Local
+                          {user.spec.localAuth.mustChangePassword && (
+                            <span className="ml-1 text-amber-600 dark:text-amber-400" title="Must change password on next login">
+                              &#9998;
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          SSO
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 px-3 text-xs">
                       <div className="space-y-0.5">
@@ -355,6 +426,15 @@ export default function AdminUsersPage() {
                         >
                           Namespaces
                         </button>
+                        {user.spec?.localAuth?.enabled && (
+                          <button
+                            onClick={() => handleResetPassword(user.metadata!.name, user.spec!.email)}
+                            disabled={resettingPassword === user.metadata?.name}
+                            className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+                          >
+                            {resettingPassword === user.metadata?.name ? "Resetting..." : "Reset password"}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleToggleDisabled(user.metadata!.name, user.spec?.disabled || false)}
                           className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
@@ -373,6 +453,47 @@ export default function AdminUsersPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Generated Password Dialog (one-time display) */}
+        {generatedPassword && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl w-full max-w-md mx-4">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Password for {generatedPassword.email}
+                </h3>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  This password will not be shown again. Copy it now and share it securely.
+                </p>
+              </div>
+              <div className="p-4">
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 text-sm font-mono bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-900 dark:text-white break-all">
+                    {generatedPassword.password}
+                  </code>
+                  <button
+                    onClick={() => navigator.clipboard?.writeText(generatedPassword.password)}
+                    className="px-2 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded border border-gray-200 dark:border-gray-700"
+                    title="Copy to clipboard"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  The user must change this password on their next login.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-800">
+                <button
+                  onClick={() => setGeneratedPassword(null)}
+                  className="px-3 py-1.5 text-xs font-medium text-[var(--color-primary-foreground)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
