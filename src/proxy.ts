@@ -27,6 +27,20 @@ export function proxy(request: NextRequest) {
       if (pathname.startsWith(proxyPrefix)) {
         return NextResponse.next();
       }
+      // Don't redirect top-level page navigations. When the user follows a link
+      // from a workspace page to an app route (e.g. /change-password), the
+      // Referer still points at the workspace but the browser is navigating to
+      // an application page, not fetching a workspace sub-resource.
+      //
+      // Sec-Fetch-Dest is the authoritative signal (Chromium, Firefox); we
+      // fall back to Accept header inspection for browsers that don't send it.
+      const secFetchDest = request.headers.get("sec-fetch-dest");
+      if (secFetchDest === "document") {
+        return NextResponse.next();
+      }
+      if (!secFetchDest && request.headers.get("accept")?.startsWith("text/html")) {
+        return NextResponse.next();
+      }
       // Don't redirect requests to OUR actual API endpoints that the frontend uses
       // (auth callbacks, workspace CRUD, etc.) — only redirect if it looks like a
       // workspace app's internal request. We distinguish by checking if the path
@@ -64,6 +78,7 @@ function isKubeWorkspacesApiPath(pathname: string): boolean {
     pathname.startsWith("/docs") ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/profile") ||
+    pathname.startsWith("/change-password") ||
     pathname === "/"
   );
 }
