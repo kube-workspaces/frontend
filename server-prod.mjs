@@ -38,6 +38,29 @@ wsProxy.on("error", (err, req, res) => {
   }
 });
 
+// Proxy target for the API service (handles /api/* and /auth/*, including the
+// workspace terminal WebSocket at /api/v1/workspaces/{name}/exec).
+const apiTarget = process.env.API_URL || "http://localhost:8090";
+const apiIsHttps = apiTarget.startsWith("https://");
+const apiOpts = {
+  target: apiTarget,
+  changeOrigin: true,
+  ws: true,
+  secure: true,
+};
+if (apiIsHttps) {
+  const targetHost = new URL(apiTarget).hostname;
+  apiOpts.agent = new https.Agent({ servername: targetHost });
+}
+const apiProxy = httpProxy.createProxyServer(apiOpts);
+apiProxy.on("error", (err, req, res) => {
+  console.error("[api-proxy] error:", err.message);
+  if (res && !res.headersSent && res.writeHead) {
+    res.writeHead(502, { "Content-Type": "text/plain" });
+    res.end(`Bad Gateway: ${err.message}`);
+  }
+});
+
 // Proxy to internal Next.js server
 const nextProxy = httpProxy.createProxyServer({
   target: `http://127.0.0.1:${nextPort}`,
@@ -175,6 +198,19 @@ readyPromise.then(() => {
       return;
     }
 
+    // API/auth routes: strip /api and forward to the API service. These also
+    // arrive via the ingress, but the frontend's own terminal WebSocket uses
+    // the frontend host, so they must be handled here too.
+    if (pathname.startsWith("/api/") || pathname === "/api" || pathname.startsWith("/auth/")) {
+      if (pathname.startsWith("/api/")) {
+        req.url = req.url.replace(/^\/api/, "");
+      } else if (pathname === "/api") {
+        req.url = "/";
+      }
+      apiProxy.web(req, res);
+      return;
+    }
+
     // Check for "escaped" requests from proxied workspaces.
     // Only forward if the path doesn't look like a frontend route.
     // Frontend routes: /, /_next/*, /workspaces*, /admin*, /auth*, /api*, /favicon*, etc.
@@ -197,6 +233,16 @@ readyPromise.then(() => {
     if (pathname.startsWith("/proxy/")) {
       req.headers["x-forwarded-host"] = req.headers.host || `${hostname}:${port}`;
       wsProxy.ws(req, socket, head);
+      return;
+    }
+
+    // Workspace terminal / VM console WebSocket (and other API/auth upgrades).
+    if (pathname.startsWith("/api/") || pathname.startsWith("/auth/")) {
+      if (pathname.startsWith("/api/")) {
+        req.url = req.url.replace(/^\/api/, "");
+      }
+      req.headers["x-forwarded-host"] = req.headers.host || `${hostname}:${port}`;
+      apiProxy.ws(req, socket, head);
       return;
     }
 
