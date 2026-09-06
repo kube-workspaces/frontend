@@ -162,7 +162,7 @@ function ConsoleContent() {
           <span className="text-xs text-gray-500">({namespace})</span>
         </div>
         <span className="text-xs text-gray-500">
-          {isConnected ? "Connected" : "Disconnected"} | {name}-0
+          {isConnected ? "Connected" : "Disconnected"}
         </span>
       </div>
 

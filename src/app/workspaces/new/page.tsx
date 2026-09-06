@@ -27,6 +27,16 @@ interface SchedulingPreset {
   nodeSelector: Record<string, string>;
 }
 
+// An image supports a workspace type when its workspace_types list includes it;
+// an empty list means container-only (the historical default).
+function filterImagesByType(images: WorkspaceImage[], type: "container" | "vm" | "scratch"): WorkspaceImage[] {
+  return images.filter((img) => {
+    const types = img.workspace_types;
+    if (!types || types.length === 0) return type === "container";
+    return types.includes(type);
+  });
+}
+
 const SCHEDULING_PRESETS: SchedulingPreset[] = [
   {
     name: "Default",
@@ -82,6 +92,7 @@ function NewWorkspaceForm() {
 
   const [name, setName] = useState("");
   const [namespace, setNamespace] = useState("");
+  const [workspaceType, setWorkspaceType] = useState<"container" | "vm" | "scratch">("container");
   const [selectedImage, setSelectedImage] = useState<WorkspaceImage | null>(null);
   const [cpuRequest, setCpuRequest] = useState("500m");
   const [memoryRequest, setMemoryRequest] = useState("512Mi");
@@ -138,16 +149,6 @@ function NewWorkspaceForm() {
           setNamespace(contextMatch ? contextNamespace : activeNs[0].name);
         }
 
-        if (imagesData && imagesData.length > 0) {
-          const match = preselectedImage
-            ? imagesData.find((img) => img.image === preselectedImage)
-            : null;
-          const initial = match || imagesData[0];
-          setSelectedImage(initial);
-          setSelectedVolumes((v) => applyHomeVolume(initial, "", v));
-          setShmEnabled(initial.default_shared_memory ?? false);
-        }
-
         // Apply enforced values from field locks
         const locks = platformConfig.formFieldLocks || [];
         for (const lock of locks) {
@@ -160,6 +161,18 @@ function NewWorkspaceForm() {
             case "cpu_limit": setCpuLimit(lock.value); break;
             case "memory_limit": setMemoryLimit(lock.value); break;
           }
+        }
+
+        // Initial image selection respects the default (container) type filter
+        if (imagesData && imagesData.length > 0) {
+          const containerImages = filterImagesByType(imagesData, "container");
+          const match = preselectedImage
+            ? containerImages.find((img) => img.image === preselectedImage)
+            : null;
+          const initial = match || containerImages[0] || imagesData[0];
+          setSelectedImage(initial);
+          setSelectedVolumes((v) => applyHomeVolume(initial, "", v));
+          setShmEnabled(initial.default_shared_memory ?? false);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load form data");
@@ -217,6 +230,7 @@ function NewWorkspaceForm() {
       await createWorkspace({
         name,
         namespace,
+        type: workspaceType,
         container: {
           name,
           image: selectedImage.image,
@@ -227,7 +241,7 @@ function NewWorkspaceForm() {
           memory_limit: memoryLimit,
           ...(gpuEnabled && gpuCount ? { gpu_request: gpuCount, gpu_vendor: gpuVendor } : {}),
         },
-        volume_mounts: volumeMounts,
+        volume_mounts: workspaceType === "vm" ? [] : volumeMounts,
         ...(filteredEnv.length > 0 ? { env: filteredEnv } : {}),
         ...(allTolerations.length > 0 ? { tolerations: allTolerations } : {}),
         ...(Object.keys(allNodeSelector).length > 0 ? { node_selector: allNodeSelector } : {}),
@@ -333,11 +347,42 @@ function NewWorkspaceForm() {
         </div>
 
         <div>
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Type</label>
+          <div className="flex gap-1.5">
+            {([
+              { value: "container", label: "Container", desc: "StatefulSet" },
+              { value: "vm", label: "Virtual Machine", desc: "KubeVirt" },
+              { value: "scratch", label: "Scratch", desc: "Deployment" },
+            ] as const).map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => {
+                  setWorkspaceType(t.value);
+                  // Re-pick the image from the newly-filtered list, keeping the
+                  // current selection if it still applies.
+                  const allowed = filterImagesByType(images, t.value);
+                  setSelectedImage((cur) => (cur && allowed.find((i) => i.image === cur.image) ? cur : allowed[0] || null));
+                }}
+                className={`flex-1 px-2.5 py-2 rounded-md border text-left transition-colors ${
+                  workspaceType === t.value
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)]"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
+              >
+                <p className="text-xs font-medium text-gray-900 dark:text-white">{t.label}</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Image</label>
           {(() => {
-            // Group images by category
+            // Group images by category (filtered to the selected workspace type)
             const grouped: Record<string, WorkspaceImage[]> = {};
-            for (const img of images) {
+            for (const img of filterImagesByType(images, workspaceType)) {
               const cat = img.category || "Other";
               if (!grouped[cat]) grouped[cat] = [];
               grouped[cat].push(img);
@@ -407,7 +452,8 @@ function NewWorkspaceForm() {
           </div>
         </div>
 
-        {/* GPU Section */}
+        {/* GPU Section (not applicable to VM workspaces) */}
+        {workspaceType !== "vm" && (
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-medium text-gray-600 dark:text-gray-400">GPU{getFieldLock("gpu") && renderLockBadge(getFieldLock("gpu")!)}</label>
@@ -442,8 +488,10 @@ function NewWorkspaceForm() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Shared Memory Section */}
+        {/* Shared Memory Section (not applicable to VM workspaces) */}
+        {workspaceType !== "vm" && (
         <div>
           <div className="flex items-center justify-between">
             <div>
@@ -460,6 +508,7 @@ function NewWorkspaceForm() {
             </button>
           </div>
         </div>
+        )}
 
         {/* Image Pull Policy Section */}
         <div>
@@ -613,6 +662,8 @@ function NewWorkspaceForm() {
           )}
         </div>
 
+        {/* Volumes (not applicable to VM workspaces — containerDisk root is ephemeral) */}
+        {workspaceType !== "vm" && (
         <div>
           <div className="flex justify-between items-center mb-2">
             <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Volumes</label>
@@ -689,6 +740,7 @@ function NewWorkspaceForm() {
             <p className="text-[10px] text-gray-400 dark:text-gray-500">No volumes attached.</p>
           )}
         </div>
+        )}
 
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => router.push("/workspaces")} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">

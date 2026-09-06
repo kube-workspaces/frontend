@@ -331,10 +331,13 @@ export default function WorkspaceDetailPage() {
     );
   }
 
+  const isVM = workspace.type === "vm";
+  // VM workspaces have no pod metrics and no web UI to connect to yet; the
+  // console is their access path. Show the tabs that still work.
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "pod", label: "Pod" },
-    { id: "metrics", label: "Metrics" },
+    ...(isVM ? [] : [{ id: "metrics" as Tab, label: "Metrics" }]),
     { id: "logs", label: "Logs" },
     { id: "events", label: "Events" },
     { id: "yaml", label: "YAML" },
@@ -349,6 +352,9 @@ export default function WorkspaceDetailPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white">{workspace.name}</h1>
               {getStatusBadge(workspace)}
+              <span className="px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                {workspace.type === "vm" ? "VM" : workspace.type === "scratch" ? "Scratch" : "Container"}
+              </span>
             </div>
             <p className="text-xs text-gray-400 dark:text-gray-500">{workspace.namespace}</p>
           </div>
@@ -356,7 +362,7 @@ export default function WorkspaceDetailPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-1">
-          {workspace.ready_replicas > 0 && !workspace.stopped && (
+          {workspace.type !== "vm" && workspace.ready_replicas > 0 && !workspace.stopped && (
             <a
               href={getConnectUrl()}
               target="_blank"

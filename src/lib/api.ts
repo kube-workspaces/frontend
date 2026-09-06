@@ -26,6 +26,7 @@ export function getProxyUrl(namespace: string, name: string, path: string): stri
 export interface Workspace {
   name: string;
   namespace: string;
+  type: WorkspaceType;
   image: string;
   port?: number;
   cpu_request?: string;
@@ -60,9 +61,12 @@ export interface VolumeMount {
   mount_path: string;
 }
 
+export type WorkspaceType = "container" | "vm" | "scratch";
+
 export interface CreateWorkspacePayload {
   name: string;
   namespace: string;
+  type?: WorkspaceType;
   container: {
     name: string;
     image: string;
@@ -151,6 +155,7 @@ export interface WorkspaceImage {
   default_user?: string;
   default_homedir?: string;
   default_shared_memory?: boolean;
+  workspace_types?: string[];
   links?: ImageLink[];
   default_credentials?: ImageCredentials;
 }
