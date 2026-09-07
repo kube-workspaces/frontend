@@ -12,6 +12,7 @@ import {
   getWorkspaceEvents,
   getWorkspacePod,
   getWorkspaceCR,
+  listCRDInstances,
   startWorkspace,
   stopWorkspace,
   deleteWorkspace,
@@ -51,7 +52,9 @@ export default function WorkspaceDetailPage() {
   const [events, setEvents] = useState<WorkspaceEvent[]>([]);
   const [podData, setPodData] = useState<PodInfo | null>(null);
   const [crData, setCrData] = useState<object | null>(null);
-  const [yamlView, setYamlView] = useState<"workspace" | "pod">("workspace");
+  const [vmData, setVmData] = useState<Record<string, unknown> | null>(null);
+  const [vmiData, setVmiData] = useState<Record<string, unknown> | null>(null);
+  const [yamlView, setYamlView] = useState<"workspace" | "pod" | "vm" | "vmi">("workspace");
   const [cleanYaml, setCleanYaml] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +122,26 @@ export default function WorkspaceDetailPage() {
       setCrData(null);
       setPodData(null);
     }
-  }, [name, namespace]);
+
+    if (workspace?.type === "vm") {
+      try {
+        const [vmList, vmiList] = await Promise.all([
+          listCRDInstances("kubevirt.io", "v1", "virtualmachines", namespace),
+          listCRDInstances("kubevirt.io", "v1", "virtualmachineinstances", namespace),
+        ]);
+        const crName = (o: Record<string, unknown>) =>
+          (o.metadata as { name?: string } | undefined)?.name;
+        setVmData(vmList.find((o) => crName(o) === name) ?? null);
+        setVmiData(vmiList.find((o) => crName(o) === name) ?? null);
+      } catch {
+        setVmData(null);
+        setVmiData(null);
+      }
+    } else {
+      setVmData(null);
+      setVmiData(null);
+    }
+  }, [name, namespace, workspace?.type]);
 
   const fetchMetrics = useCallback(async () => {
     try {
@@ -468,6 +490,9 @@ export default function WorkspaceDetailPage() {
           <YamlTab
             crData={crData}
             podData={podData}
+            vmData={vmData}
+            vmiData={vmiData}
+            isVM={workspace?.type === "vm"}
             yamlView={yamlView}
             setYamlView={setYamlView}
             cleanYaml={cleanYaml}
@@ -1281,6 +1306,9 @@ function cleanObject(obj: Record<string, unknown>): Record<string, unknown> {
 function YamlTab({
   crData,
   podData,
+  vmData,
+  vmiData,
+  isVM,
   yamlView,
   setYamlView,
   cleanYaml,
@@ -1289,17 +1317,28 @@ function YamlTab({
 }: {
   crData: object | null;
   podData: PodInfo | null;
-  yamlView: "workspace" | "pod";
-  setYamlView: (v: "workspace" | "pod") => void;
+  vmData: Record<string, unknown> | null;
+  vmiData: Record<string, unknown> | null;
+  isVM: boolean;
+  yamlView: "workspace" | "pod" | "vm" | "vmi";
+  setYamlView: (v: "workspace" | "pod" | "vm" | "vmi") => void;
   cleanYaml: boolean;
   setCleanYaml: (v: boolean) => void;
   onRefresh: () => void;
 }) {
-  const data = yamlView === "workspace" ? crData : podData;
+  const data =
+    yamlView === "workspace" ? crData : yamlView === "pod" ? podData : yamlView === "vm" ? vmData : vmiData;
   let content: string;
 
   if (!data) {
-    content = yamlView === "pod" ? "Pod not found (workspace may be stopped)" : "No data available";
+    content =
+      yamlView === "pod"
+        ? "Pod not found (workspace may be stopped)"
+        : yamlView === "vm"
+          ? "VirtualMachine not found"
+          : yamlView === "vmi"
+            ? "VirtualMachineInstance not found (VirtualMachine may be stopped)"
+            : "No data available";
   } else {
     const obj = cleanYaml ? cleanObject(data as Record<string, unknown>) : data;
     content = yamlStringify(obj, { lineWidth: 120 });
@@ -1329,6 +1368,30 @@ function YamlTab({
           >
             Pod
           </button>
+          {isVM && (
+            <>
+              <button
+                onClick={() => setYamlView("vm")}
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                  yamlView === "vm"
+                    ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
+                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                }`}
+              >
+                VirtualMachine
+              </button>
+              <button
+                onClick={() => setYamlView("vmi")}
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                  yamlView === "vmi"
+                    ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
+                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                }`}
+              >
+                VirtualMachineInstance
+              </button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
