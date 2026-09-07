@@ -155,6 +155,7 @@ export interface WorkspaceImage {
   default_user?: string;
   default_password?: string;
   default_cloud_init?: boolean;
+  default_user_data?: string;
   default_homedir?: string;
   default_shared_memory?: boolean;
   workspace_types?: string[];
@@ -193,6 +194,7 @@ export interface CreateImagePayload {
   default_user?: string;
   default_password?: string;
   default_cloud_init?: boolean;
+  default_user_data?: string;
   default_homedir?: string;
   links?: ImageLink[];
   default_credentials?: ImageCredentials;
