@@ -40,6 +40,11 @@ export default function VncDisplay({
   const mountRFB = useCallback(() => {
     if (disposed.current || !mountRef.current) return;
 
+    if (mountRef.current.clientWidth === 0 || mountRef.current.clientHeight === 0) {
+      requestAnimationFrame(() => mountRFBRef.current());
+      return;
+    }
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}${API_BASE}/v1/workspaces/${workspaceName}/vnc?namespace=${namespace}`;
