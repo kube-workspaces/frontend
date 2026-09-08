@@ -11,12 +11,14 @@ interface TerminalModalProps {
   workspaceName: string;
   namespace: string;
   onClose: () => void;
+  isVM?: boolean;
 }
 
 export default function TerminalModal({
   workspaceName,
   namespace,
   onClose,
+  isVM = false,
 }: TerminalModalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<Terminal | null>(null);
@@ -181,6 +183,14 @@ export default function TerminalModal({
     onClose();
   };
 
+  const handleOpenDisplay = () => {
+    window.open(
+      `/workspaces/${workspaceName}/console?namespace=${namespace}&mode=display`,
+      "_blank"
+    );
+    onClose();
+  };
+
   // Handle Escape key to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -264,6 +274,16 @@ export default function TerminalModal({
                 />
               </svg>
             </button>
+            {/* Open VNC display for VM workspaces */}
+            {isVM && (
+              <button
+                onClick={handleOpenDisplay}
+                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+                title="Open graphical display (noVNC)"
+              >
+                Display
+              </button>
+            )}
             {/* Maximize/Restore */}
             <button
               onClick={() => setIsMaximized(!isMaximized)}

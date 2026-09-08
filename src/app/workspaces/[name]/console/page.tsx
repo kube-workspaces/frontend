@@ -6,7 +6,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, getWorkspace } from "@/lib/api";
+import VncDisplay from "@/components/vnc-display";
 
 export default function ConsolePage() {
   return (
@@ -27,10 +28,30 @@ function ConsoleContent() {
   const searchParams = useSearchParams();
   const name = params.name as string;
   const namespace = searchParams.get("namespace") || "workspaces";
+  const initialMode = searchParams.get("mode") === "display" ? "display" : "serial";
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isVM, setIsVM] = useState(false);
+  const [mode, setMode] = useState<"serial" | "display">(initialMode);
+  const [displayConnected, setDisplayConnected] = useState(false);
+
+  // VM workspaces expose a graphical VNC display alongside the serial console;
+  // container/scratch workspaces only have a terminal.
+  useEffect(() => {
+    let cancelled = false;
+    getWorkspace(name, namespace)
+      .then((ws) => {
+        if (!cancelled) setIsVM(ws.type === "vm");
+      })
+      .catch(() => {
+        if (!cancelled) setIsVM(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, namespace]);
 
   const connect = useCallback(() => {
     if (!terminalRef.current) return;
@@ -140,11 +161,12 @@ function ConsoleContent() {
   }, [name, namespace]);
 
   useEffect(() => {
+    if (mode !== "serial") return;
     const cleanup = connect();
     return () => {
       if (cleanup) cleanup();
     };
-  }, [connect]);
+  }, [connect, mode]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#1a1b26]">
@@ -153,38 +175,78 @@ function ConsoleContent() {
         <div className="flex items-center gap-3">
           <div
             className={`w-2.5 h-2.5 rounded-full ${
-              isConnected ? "bg-green-500" : "bg-red-500"
+              (mode === "serial" ? isConnected : displayConnected) ? "bg-green-500" : "bg-red-500"
             }`}
           />
           <span className="text-sm font-medium text-gray-200">
             {name}
           </span>
           <span className="text-xs text-gray-500">({namespace})</span>
+          {isVM && (
+            <div className="ml-2 flex items-center gap-1 bg-[#1a1b26] rounded-md p-0.5 border border-gray-700">
+              <button
+                onClick={() => setMode("serial")}
+                className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
+                  mode === "serial"
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                }`}
+              >
+                Serial
+              </button>
+              <button
+                onClick={() => setMode("display")}
+                className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
+                  mode === "display"
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                }`}
+              >
+                Display
+              </button>
+            </div>
+          )}
         </div>
         <span className="text-xs text-gray-500">
-          {isConnected ? "Connected" : "Disconnected"}
+          {mode === "serial"
+            ? isConnected
+              ? "Connected"
+              : "Disconnected"
+            : displayConnected
+            ? "Connected"
+            : "Disconnected"}
         </span>
       </div>
 
-      {/* Terminal */}
+      {/* Terminal / Display */}
       <div className="flex-1 relative overflow-hidden">
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
-            <div className="text-center">
-              <p className="text-red-400 text-sm mb-2">{error}</p>
-              <button
-                onClick={() => {
-                  setError(null);
-                  connect();
-                }}
-                className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
-              >
-                Reconnect
-              </button>
-            </div>
-          </div>
+        {mode === "display" ? (
+          <VncDisplay
+            workspaceName={name}
+            namespace={namespace}
+            onConnectionChange={setDisplayConnected}
+          />
+        ) : (
+          <>
+            {error && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
+                <div className="text-center">
+                  <p className="text-red-400 text-sm mb-2">{error}</p>
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      connect();
+                    }}
+                    className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
+                  >
+                    Reconnect
+                  </button>
+                </div>
+              </div>
+            )}
+            <div ref={terminalRef} className="absolute inset-0 p-1" />
+          </>
         )}
-        <div ref={terminalRef} className="absolute inset-0 p-1" />
       </div>
     </div>
   );

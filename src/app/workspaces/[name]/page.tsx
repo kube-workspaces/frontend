@@ -516,6 +516,7 @@ export default function WorkspaceDetailPage() {
         <TerminalModal
           workspaceName={workspace.name}
           namespace={workspace.namespace}
+          isVM={workspace.type === "vm"}
           onClose={() => setTerminalOpen(false)}
         />
       )}
