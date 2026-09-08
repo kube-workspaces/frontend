@@ -60,6 +60,7 @@ export default function VncDisplay({
       reconnectAttempt.current = 0;
       everConnected.current = true;
       notify(true);
+      rfb.focus();
     });
     rfb.addEventListener("disconnect", (e: Event) => {
       const detail = (e as CustomEvent<{ clean?: boolean; reason?: string }>).detail;
@@ -133,10 +134,10 @@ export default function VncDisplay({
   }
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black">
+    <div className="absolute inset-0 overflow-hidden bg-black flex items-center justify-center">
       <div
         ref={mountRef}
-        className="w-full h-full"
+        className="w-full h-full relative flex items-center justify-center"
         style={{ touchAction: "none" }}
       />
       <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
