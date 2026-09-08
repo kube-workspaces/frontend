@@ -28,6 +28,7 @@ export default function VncDisplay({
   const everConnected = useRef(false);
   const disposed = useRef(false);
   const mountRFBRef = useRef<() => void>(() => {});
+  const pointerDownHandlerRef = useRef<(() => void) | null>(null);
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -67,6 +68,17 @@ export default function VncDisplay({
       notify(true);
       rfb.focus();
     });
+
+    const container = mountRef.current;
+    const handlePointerDown = () => {
+      if (rfbRef.current) {
+        rfbRef.current.focus();
+      }
+    };
+    pointerDownHandlerRef.current = handlePointerDown;
+    if (container) {
+      container.addEventListener("pointerdown", handlePointerDown);
+    }
     rfb.addEventListener("disconnect", (e: Event) => {
       const detail = (e as CustomEvent<{ clean?: boolean; reason?: string }>).detail;
       const reason = detail?.reason || "";
@@ -107,9 +119,13 @@ export default function VncDisplay({
   useEffect(() => {
     disposed.current = false;
     mountRFB();
+    const container = mountRef.current;
     return () => {
       disposed.current = true;
       if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
+      if (container && pointerDownHandlerRef.current) {
+        container.removeEventListener("pointerdown", pointerDownHandlerRef.current);
+      }
       if (rfbRef.current) {
         rfbRef.current.disconnect();
         rfbRef.current = null;
@@ -139,11 +155,10 @@ export default function VncDisplay({
   }
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black">
+    <div className="absolute inset-0 overflow-hidden bg-black flex items-center justify-center">
       <div
         ref={mountRef}
-        className="absolute inset-0 w-full h-full"
-        style={{ touchAction: "none" }}
+        style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}
       />
       <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
         <div
