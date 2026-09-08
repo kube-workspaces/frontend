@@ -15,6 +15,7 @@ import {
   listCRDInstances,
   startWorkspace,
   stopWorkspace,
+  resetWorkspace,
   deleteWorkspace,
   updateWorkspace,
   listImages,
@@ -75,6 +76,7 @@ export default function WorkspaceDetailPage() {
   const [metricsWindow, setMetricsWindow] = useState("1h");
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const fetchWorkspace = useCallback(async () => {
     try {
@@ -223,6 +225,19 @@ export default function WorkspaceDetailPage() {
       await fetchWorkspace();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to stop workspace");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setActionLoading(true);
+    try {
+      await resetWorkspace(name, namespace);
+      setResetDialogOpen(false);
+      await fetchWorkspace();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset workspace");
     } finally {
       setActionLoading(false);
     }
@@ -441,6 +456,18 @@ export default function WorkspaceDetailPage() {
               Stop
             </button>
           )}
+          {isVM && (
+            <button
+              onClick={() => setResetDialogOpen(true)}
+              disabled={actionLoading}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              Reset
+            </button>
+          )}
           <button
             onClick={handleDelete}
             disabled={actionLoading}
@@ -510,6 +537,14 @@ export default function WorkspaceDetailPage() {
         onSave={handleUpdate}
         onCancel={() => setEditOpen(false)}
         saving={actionLoading}
+      />
+
+      <ResetModal
+        workspaceName={workspace.name}
+        open={resetDialogOpen}
+        onConfirm={handleReset}
+        onCancel={() => setResetDialogOpen(false)}
+        reseting={actionLoading}
       />
 
       {terminalOpen && workspace && (
@@ -1454,6 +1489,84 @@ function YamlTab({
       <pre className="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 p-3 rounded-md overflow-x-auto text-xs font-mono max-h-[500px] overflow-y-auto whitespace-pre-wrap leading-relaxed border border-gray-200 dark:border-gray-800">
         {content}
       </pre>
+    </div>
+  );
+}
+
+function ResetModal({
+  workspaceName,
+  open,
+  onConfirm,
+  onCancel,
+  reseting,
+}: {
+  workspaceName: string;
+  open: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  reseting: boolean;
+}) {
+  const [typed, setTyped] = useState("");
+  if (!open) return null;
+  const confirmed = typed === workspaceName;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
+      <div
+        className="bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg shadow-xl w-full max-w-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Reset Workspace</h2>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="flex items-start gap-2 text-xs text-gray-700 dark:text-gray-300">
+            <svg className="w-4 h-4 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <div className="space-y-2">
+              <p>
+                Resetting <span className="font-semibold text-gray-900 dark:text-white">{workspaceName}</span> will stop the
+                virtual machine, delete its root disk, and re-provision it from the workspace image.
+              </p>
+              <p>Any files on the root disk will be permanently lost. This cannot be undone.</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+              Type <span className="font-mono text-gray-900 dark:text-white">{workspaceName}</span> to confirm
+            </label>
+            <input
+              type="text"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={workspaceName}
+              className="mt-1 block w-full rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 text-sm text-gray-900 dark:text-white px-3 py-2 focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-muted)] outline-none transition-colors"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-800">
+          <button
+            onClick={onCancel}
+            disabled={reseting}
+            className="px-3 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!confirmed || reseting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-50"
+          >
+            {reseting ? "Resetting..." : "Reset workspace"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

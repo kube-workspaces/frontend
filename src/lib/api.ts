@@ -286,6 +286,17 @@ export async function stopWorkspace(name: string, namespace: string = "workspace
   return res.json();
 }
 
+export async function resetWorkspace(name: string, namespace: string = "workspaces"): Promise<Workspace> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/reset?namespace=${namespace}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw await apiError(res, "Failed to reset workspace");
+  }
+  return res.json();
+}
+
 // Volume API
 export async function listVolumes(namespace: string = "_all"): Promise<Volume[]> {
   const res = await fetch(`${API_BASE}/v1/volumes?namespace=${namespace}`, {
