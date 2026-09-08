@@ -54,7 +54,7 @@ export default function WorkspaceDetailPage() {
   const [crData, setCrData] = useState<object | null>(null);
   const [vmData, setVmData] = useState<Record<string, unknown> | null>(null);
   const [vmiData, setVmiData] = useState<Record<string, unknown> | null>(null);
-  const [yamlView, setYamlView] = useState<"workspace" | "pod" | "vm" | "vmi">("workspace");
+  const [yamlView, setYamlView] = useState<"workspace" | "pod" | "vm" | "vmi" | "userdata">("workspace");
   const [cleanYaml, setCleanYaml] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1303,6 +1303,30 @@ function cleanObject(obj: Record<string, unknown>): Record<string, unknown> {
   return cleaned;
 }
 
+// extractCloudInitUserData pulls the NoCloud user-data out of a VirtualMachine
+// object's spec.template.spec.volumes (cloudInitNoCloud.userData). KubeVirt
+// stores this as plaintext (userDataBase64 is the encoded variant). Returns a
+// friendly message when the VM is missing or has no cloud-init datasource.
+function extractCloudInitUserData(vm: Record<string, unknown> | null): string {
+  if (!vm) {
+    return "VirtualMachine not found";
+  }
+  const volumes = (
+    vm.spec &&
+    (vm.spec as Record<string, unknown>).template &&
+    ((vm.spec as Record<string, unknown>).template as Record<string, unknown>).spec &&
+    (((vm.spec as Record<string, unknown>).template as Record<string, unknown>).spec as Record<string, unknown>).volumes
+  ) as unknown[] | undefined;
+  for (const vol of volumes ?? []) {
+    const v = vol as Record<string, unknown>;
+    const ci = v.cloudInitNoCloud as Record<string, unknown> | undefined;
+    if (ci && typeof ci.userData === "string") {
+      return ci.userData as string;
+    }
+  }
+  return "# No cloud-init user-data\n# This workspace has no seeded cloud-init datasource.";
+}
+
 function YamlTab({
   crData,
   podData,
@@ -1320,8 +1344,8 @@ function YamlTab({
   vmData: Record<string, unknown> | null;
   vmiData: Record<string, unknown> | null;
   isVM: boolean;
-  yamlView: "workspace" | "pod" | "vm" | "vmi";
-  setYamlView: (v: "workspace" | "pod" | "vm" | "vmi") => void;
+  yamlView: "workspace" | "pod" | "vm" | "vmi" | "userdata";
+  setYamlView: (v: "workspace" | "pod" | "vm" | "vmi" | "userdata") => void;
   cleanYaml: boolean;
   setCleanYaml: (v: boolean) => void;
   onRefresh: () => void;
@@ -1330,7 +1354,9 @@ function YamlTab({
     yamlView === "workspace" ? crData : yamlView === "pod" ? podData : yamlView === "vm" ? vmData : vmiData;
   let content: string;
 
-  if (!data) {
+  if (yamlView === "userdata") {
+    content = extractCloudInitUserData(vmData as Record<string, unknown> | null);
+  } else if (!data) {
     content =
       yamlView === "pod"
         ? "Pod not found (workspace may be stopped)"
@@ -1389,6 +1415,16 @@ function YamlTab({
                 }`}
               >
                 VirtualMachineInstance
+              </button>
+              <button
+                onClick={() => setYamlView("userdata")}
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                  yamlView === "userdata"
+                    ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
+                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                }`}
+              >
+                User Data
               </button>
             </>
           )}
