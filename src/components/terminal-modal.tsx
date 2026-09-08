@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { useSerialConsole } from "@/lib/use-serial-console";
+import VncDisplay from "@/components/vnc-display";
 
 interface TerminalModalProps {
   workspaceName: string;
@@ -21,6 +22,8 @@ export default function TerminalModal({
   const [isMaximized, setIsMaximized] = useState(false);
   const [elapsed, setElapsed] = useState("");
   const startedAt = useRef(0);
+  const [mode, setMode] = useState<"serial" | "display">("serial");
+  const [displayConnected, setDisplayConnected] = useState(false);
 
   const serial = useSerialConsole({
     workspaceName,
@@ -37,9 +40,10 @@ export default function TerminalModal({
   const { connect, dispose } = serial;
 
   useEffect(() => {
+    if (mode !== "serial") return;
     connect();
     return dispose;
-  }, [connect, dispose]);
+  }, [mode, connect, dispose]);
 
   // Close on Ctrl+Escape.
   useEffect(() => {
@@ -52,7 +56,7 @@ export default function TerminalModal({
 
   // Session duration timer
   useEffect(() => {
-    if (!serial.isConnected) return;
+    if (mode !== "serial" ? !displayConnected : !serial.isConnected) return;
     startedAt.current = Date.now();
     const tick = () => {
       const secs = Math.floor((Date.now() - startedAt.current) / 1000);
@@ -68,7 +72,7 @@ export default function TerminalModal({
     tick();
     const interval = setInterval(tick, 1000);
     return () => { clearInterval(interval); };
-  }, [serial.isConnected]);
+  }, [mode, serial.isConnected, displayConnected]);
 
   const handleOpenInNewTab = () => {
     window.open(
@@ -79,11 +83,8 @@ export default function TerminalModal({
   };
 
   const handleOpenDisplay = () => {
-    window.open(
-      `/workspaces/${workspaceName}/console?namespace=${namespace}&mode=display`,
-      "_blank"
-    );
-    onClose();
+    setMode(mode === "display" ? "serial" : "display");
+    setElapsed("");
   };
 
   return (
@@ -107,12 +108,14 @@ export default function TerminalModal({
             <div className="flex items-center gap-1.5">
               <div
                 className={`w-3 h-3 rounded-full ${
-                  serial.isConnected ? "bg-green-500" : "bg-red-500"
+                  mode === "display" ? displayConnected : serial.isConnected
+                    ? "bg-green-500"
+                    : "bg-red-500"
                 }`}
               />
             </div>
             <span className="text-sm font-medium text-gray-200">
-              Console: {workspaceName}
+              {mode === "display" ? "Display" : "Console"}: {workspaceName}
             </span>
             <span className="text-xs text-gray-500">({namespace})</span>
           </div>
@@ -142,9 +145,9 @@ export default function TerminalModal({
               <button
                 onClick={handleOpenDisplay}
                 className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
-                title="Open graphical display (noVNC)"
+                title={mode === "display" ? "Back to serial console" : "Open graphical display (noVNC)"}
               >
-                Display
+                {mode === "display" ? "Console" : "Display"}
               </button>
             )}
             {/* Maximize/Restore */}
@@ -206,55 +209,69 @@ export default function TerminalModal({
           </div>
         </div>
 
-        {/* Terminal area */}
+        {/* Terminal / Display area */}
         <div className="flex-1 relative overflow-hidden">
-          {serial.error && !serial.takeoverPrompt && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
-              <div className="text-center">
-                <p className="text-red-400 text-sm mb-2">{serial.error}</p>
-                <button
-                  onClick={() => serial.connect()}
-                  className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
-                >
-                  Reconnect
-                </button>
-              </div>
-            </div>
-          )}
-          {serial.takeoverPrompt && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
-              <div className="text-center max-w-md px-6">
-                <p className="text-gray-200 text-sm font-medium mb-1">Console in use</p>
-                <p className="text-gray-500 text-xs mb-4">
-                  Another session is connected to this serial console. Disconnect it and take over?
-                </p>
-                <div className="flex justify-center gap-3">
-                  <button
-                    onClick={serial.handleTakeoverCancel}
-                    disabled={serial.takeoverBusy}
-                    className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={serial.handleTakeover}
-                    disabled={serial.takeoverBusy}
-                    className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors disabled:opacity-50"
-                  >
-                    {serial.takeoverBusy ? "Taking over…" : "Take over"}
-                  </button>
+          {mode === "display" ? (
+            <VncDisplay
+              workspaceName={workspaceName}
+              namespace={namespace}
+              onConnectionChange={setDisplayConnected}
+            />
+          ) : (
+            <>
+              {serial.error && !serial.takeoverPrompt && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
+                  <div className="text-center">
+                    <p className="text-red-400 text-sm mb-2">{serial.error}</p>
+                    <button
+                      onClick={() => serial.connect()}
+                      className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
+                    >
+                      Reconnect
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+              {serial.takeoverPrompt && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
+                  <div className="text-center max-w-md px-6">
+                    <p className="text-gray-200 text-sm font-medium mb-1">Console in use</p>
+                    <p className="text-gray-500 text-xs mb-4">
+                      Another session is connected to this serial console. Disconnect it and take over?
+                    </p>
+                    <div className="flex justify-center gap-3">
+                      <button
+                        onClick={serial.handleTakeoverCancel}
+                        disabled={serial.takeoverBusy}
+                        className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={serial.handleTakeover}
+                        disabled={serial.takeoverBusy}
+                        className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors disabled:opacity-50"
+                      >
+                        {serial.takeoverBusy ? "Taking over…" : "Take over"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={terminalRef} className="absolute inset-0 p-1" />
+            </>
           )}
-          <div ref={terminalRef} className="absolute inset-0 p-1" />
         </div>
 
         {/* Footer status bar */}
         <div className="flex items-center justify-between px-4 py-1 bg-[#24283b] border-t border-gray-700 text-xs text-gray-500 shrink-0">
           <span>
-            {serial.isConnected ? "Connected" : "Disconnected"}
-            {serial.isConnected && elapsed && <span className="ml-2 text-gray-600">{elapsed}</span>}
+            {mode === "display"
+              ? displayConnected ? "Display connected" : "Display disconnected"
+              : serial.isConnected ? "Connected" : "Disconnected"}
+            {(mode === "display" ? displayConnected : serial.isConnected) && elapsed && (
+              <span className="ml-2 text-gray-600">{elapsed}</span>
+            )}
             {" "}| Ctrl+Esc to close
           </span>
           <span>{workspaceName}-0</span>

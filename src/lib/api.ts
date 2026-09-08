@@ -297,6 +297,16 @@ export async function resetWorkspace(name: string, namespace: string = "workspac
   return res.json();
 }
 
+export async function rebootWorkspace(name: string, namespace: string = "workspaces"): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/reboot?namespace=${namespace}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw await apiError(res, "Failed to reboot workspace");
+  }
+}
+
 export async function checkSerialConsoleInUse(
   name: string,
   namespace: string = "workspaces"
