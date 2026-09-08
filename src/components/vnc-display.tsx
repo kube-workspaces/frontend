@@ -134,10 +134,10 @@ export default function VncDisplay({
   }
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black flex items-center justify-center">
+    <div className="absolute inset-0 overflow-hidden bg-black">
       <div
         ref={mountRef}
-        className="w-full h-full relative flex items-center justify-center"
+        className="absolute inset-0 w-full h-full"
         style={{ touchAction: "none" }}
       />
       <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
