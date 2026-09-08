@@ -12,7 +12,8 @@ interface VncDisplayProps {
 
 // A noVNC RFB view over the API's /v1/workspaces/{name}/vnc WebSocket bridge.
 // The bridge speaks the raw RFB byte stream, so the browser client connects
-// directly — no websockify hop required.
+// directly — no websockify hop required. The VMI VNC console is single-session;
+// the API refuses a second bridge with 409 while another session holds it.
 export default function VncDisplay({
   workspaceName,
   namespace,
@@ -22,6 +23,11 @@ export default function VncDisplay({
   const rfbRef = useRef<RFB | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const reconnectTimer = useRef<number | null>(null);
+  const reconnectAttempt = useRef(0);
+  const everConnected = useRef(false);
+  const disposed = useRef(false);
+  const mountRFBRef = useRef<() => void>(() => {});
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -31,8 +37,8 @@ export default function VncDisplay({
     [onConnectionChange]
   );
 
-  useEffect(() => {
-    if (!mountRef.current) return;
+  const mountRFB = useCallback(() => {
+    if (disposed.current || !mountRef.current) return;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
@@ -51,6 +57,8 @@ export default function VncDisplay({
 
     rfb.addEventListener("connect", () => {
       setError(null);
+      reconnectAttempt.current = 0;
+      everConnected.current = true;
       notify(true);
     });
     rfb.addEventListener("disconnect", (e: Event) => {
@@ -64,6 +72,17 @@ export default function VncDisplay({
           : "Display disconnected"
       );
       notify(false);
+      if (disposed.current) return;
+      // Only auto-reconnect sessions that actually established once. A connect
+      // that never opened (e.g. another session holds the display, the VM is
+      // stopped) shows the error state instead of churning.
+      if (everConnected.current) {
+        const attempt = reconnectAttempt.current + 1;
+        reconnectAttempt.current = attempt;
+        const delay = Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 15000);
+        if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = window.setTimeout(() => mountRFBRef.current(), delay);
+      }
     });
     rfb.addEventListener("securityfailure", (e: Event) => {
       const reason = (e as CustomEvent<{ reason?: string }>).detail?.reason;
@@ -73,15 +92,25 @@ export default function VncDisplay({
     rfb.addEventListener("desktopname", () => {
       setError(null);
     });
+  }, [workspaceName, namespace, notify]);
 
+  useEffect(() => {
+    mountRFBRef.current = mountRFB;
+  }, [mountRFB]);
+
+  useEffect(() => {
+    disposed.current = false;
+    mountRFB();
     return () => {
+      disposed.current = true;
+      if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
       if (rfbRef.current) {
         rfbRef.current.disconnect();
         rfbRef.current = null;
       }
       notify(false);
     };
-  }, [workspaceName, namespace, notify]);
+  }, [mountRFB, notify]);
 
   if (error && !isConnected) {
     return (
@@ -90,6 +119,15 @@ export default function VncDisplay({
         <span className="text-xs text-gray-500">
           Another session may hold the display (KubeVirt VNC is single-session).
         </span>
+        <button
+          onClick={() => {
+            setError(null);
+            mountRFB();
+          }}
+          className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
+        >
+          Reconnect
+        </button>
       </div>
     );
   }

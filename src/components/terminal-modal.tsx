@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
+import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { API_BASE } from "@/lib/api";
+import { useSerialConsole } from "@/lib/use-serial-console";
 
 interface TerminalModalProps {
   workspaceName: string;
@@ -21,159 +18,57 @@ export default function TerminalModal({
   isVM = false,
 }: TerminalModalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const terminalInstance = useRef<Terminal | null>(null);
-  const fitAddon = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [sessionStart, setSessionStart] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState("");
+  const startedAt = useRef(0);
 
-  const connect = useCallback(() => {
-    if (!terminalRef.current) return;
+  const serial = useSerialConsole({
+    workspaceName,
+    namespace,
+    containerRef: terminalRef,
+    isVM,
+    // A clean shell exit (container) auto-closes the modal; a take-over of the
+    // VM serial console just shows the "Connection closed." message.
+    onCleanClose: (reason) => {
+      if (!reason.startsWith("taken over")) onClose();
+    },
+  });
 
-    // Create terminal
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
-      theme: {
-        background: "#1a1b26",
-        foreground: "#a9b1d6",
-        cursor: "#c0caf5",
-        selectionBackground: "#33467c",
-        black: "#15161e",
-        red: "#f7768e",
-        green: "#9ece6a",
-        yellow: "#e0af68",
-        blue: "#7aa2f7",
-        magenta: "#bb9af7",
-        cyan: "#7dcfff",
-        white: "#a9b1d6",
-        brightBlack: "#414868",
-        brightRed: "#f7768e",
-        brightGreen: "#9ece6a",
-        brightYellow: "#e0af68",
-        brightBlue: "#7aa2f7",
-        brightMagenta: "#bb9af7",
-        brightCyan: "#7dcfff",
-        brightWhite: "#c0caf5",
-      },
-      allowProposedApi: true,
-    });
-
-    const fit = new FitAddon();
-    const webLinks = new WebLinksAddon();
-
-    term.loadAddon(fit);
-    term.loadAddon(webLinks);
-    term.open(terminalRef.current);
-
-    // Intercept Ctrl+Escape at the terminal level to close the modal.
-    // xterm captures all key events, so window-level listeners won't fire.
-    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.key === "Escape" && e.ctrlKey && e.type === "keydown") {
-        onClose();
-        return false; // Prevent xterm from processing this key
-      }
-      return true; // Let xterm handle all other keys
-    });
-
-    // Fit after a brief delay to ensure the container has rendered
-    setTimeout(() => fit.fit(), 50);
-
-    terminalInstance.current = term;
-    fitAddon.current = fit;
-
-    // Determine WebSocket URL
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-
-    // Build the exec URL - goes through the frontend proxy to the API
-    const cols = term.cols;
-    const rows = term.rows;
-    const wsUrl = `${protocol}//${host}${API_BASE}/v1/workspaces/${workspaceName}/exec?namespace=${namespace}&cols=${cols}&rows=${rows}`;
-
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = "arraybuffer";
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      setSessionStart(Date.now());
-      setError(null);
-      term.focus();
-    };
-
-    ws.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(event.data));
-      } else {
-        term.write(event.data);
-      }
-    };
-
-    ws.onclose = (event) => {
-      setIsConnected(false);
-      if (event.code === 1000) {
-        // Clean shell exit (e.g. user typed "exit") — auto-close the modal
-        onClose();
-      } else {
-        // Abnormal close — keep open for inspection
-        term.write("\r\n\x1b[31mConnection closed.\x1b[0m\r\n");
-      }
-    };
-
-    ws.onerror = () => {
-      setError("Failed to connect to workspace terminal");
-      setIsConnected(false);
-    };
-
-    // Send terminal input to WebSocket
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
-      }
-    });
-
-    // Handle terminal resize
-    term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols, rows }));
-      }
-    });
-
-    // Handle window resize
-    const handleResize = () => {
-      if (fitAddon.current) {
-        fitAddon.current.fit();
-      }
-    };
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      ws.close();
-      term.dispose();
-    };
-  }, [workspaceName, namespace, onClose]);
+  const { connect, dispose } = serial;
 
   useEffect(() => {
-    const cleanup = connect();
-    return () => {
-      if (cleanup) cleanup();
-    };
-  }, [connect]);
+    connect();
+    return dispose;
+  }, [connect, dispose]);
 
-  // Refit terminal when maximized state changes
+  // Close on Ctrl+Escape.
   useEffect(() => {
-    setTimeout(() => {
-      if (fitAddon.current) {
-        fitAddon.current.fit();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && e.ctrlKey) onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  // Session duration timer
+  useEffect(() => {
+    if (!serial.isConnected) return;
+    startedAt.current = Date.now();
+    const tick = () => {
+      const secs = Math.floor((Date.now() - startedAt.current) / 1000);
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      if (h > 0) {
+        setElapsed(`${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+      } else {
+        setElapsed(`${m}:${String(s).padStart(2, "0")}`);
       }
-    }, 100);
-  }, [isMaximized]);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => { clearInterval(interval); };
+  }, [serial.isConnected]);
 
   const handleOpenInNewTab = () => {
     window.open(
@@ -190,38 +85,6 @@ export default function TerminalModal({
     );
     onClose();
   };
-
-  // Handle Escape key to close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && e.ctrlKey) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  // Session duration timer
-  useEffect(() => {
-    if (!sessionStart || !isConnected) return;
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      const secs = Math.floor((Date.now() - sessionStart) / 1000);
-      const h = Math.floor(secs / 3600);
-      const m = Math.floor((secs % 3600) / 60);
-      const s = secs % 60;
-      if (h > 0) {
-        setElapsed(`${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
-      } else {
-        setElapsed(`${m}:${String(s).padStart(2, "0")}`);
-      }
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [sessionStart, isConnected]);
 
   return (
     <div
@@ -244,7 +107,7 @@ export default function TerminalModal({
             <div className="flex items-center gap-1.5">
               <div
                 className={`w-3 h-3 rounded-full ${
-                  isConnected ? "bg-green-500" : "bg-red-500"
+                  serial.isConnected ? "bg-green-500" : "bg-red-500"
                 }`}
               />
             </div>
@@ -345,22 +208,42 @@ export default function TerminalModal({
 
         {/* Terminal area */}
         <div className="flex-1 relative overflow-hidden">
-          {error && (
+          {serial.error && !serial.takeoverPrompt && (
             <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
               <div className="text-center">
-                <p className="text-red-400 text-sm mb-2">{error}</p>
+                <p className="text-red-400 text-sm mb-2">{serial.error}</p>
                 <button
-                  onClick={() => {
-                    setError(null);
-                    // Reconnect
-                    if (wsRef.current) wsRef.current.close();
-                    if (terminalInstance.current) terminalInstance.current.dispose();
-                    connect();
-                  }}
+                  onClick={() => serial.connect()}
                   className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
                 >
                   Reconnect
                 </button>
+              </div>
+            </div>
+          )}
+          {serial.takeoverPrompt && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
+              <div className="text-center max-w-md px-6">
+                <p className="text-gray-200 text-sm font-medium mb-1">Console in use</p>
+                <p className="text-gray-500 text-xs mb-4">
+                  Another session is connected to this serial console. Disconnect it and take over?
+                </p>
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={serial.handleTakeoverCancel}
+                    disabled={serial.takeoverBusy}
+                    className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={serial.handleTakeover}
+                    disabled={serial.takeoverBusy}
+                    className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors disabled:opacity-50"
+                  >
+                    {serial.takeoverBusy ? "Taking over…" : "Take over"}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -370,8 +253,8 @@ export default function TerminalModal({
         {/* Footer status bar */}
         <div className="flex items-center justify-between px-4 py-1 bg-[#24283b] border-t border-gray-700 text-xs text-gray-500 shrink-0">
           <span>
-            {isConnected ? "Connected" : "Disconnected"}
-            {elapsed && <span className="ml-2 text-gray-600">{elapsed}</span>}
+            {serial.isConnected ? "Connected" : "Disconnected"}
+            {serial.isConnected && elapsed && <span className="ml-2 text-gray-600">{elapsed}</span>}
             {" "}| Ctrl+Esc to close
           </span>
           <span>{workspaceName}-0</span>

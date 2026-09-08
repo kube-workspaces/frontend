@@ -1,12 +1,10 @@
 "use client";
 
 import { useParams, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useCallback, useState } from "react";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Suspense, useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { API_BASE, getWorkspace } from "@/lib/api";
+import { getWorkspace } from "@/lib/api";
+import { useSerialConsole } from "@/lib/use-serial-console";
 import VncDisplay from "@/components/vnc-display";
 
 export default function ConsolePage() {
@@ -31,8 +29,6 @@ function ConsoleContent() {
   const initialMode = searchParams.get("mode") === "display" ? "display" : "serial";
 
   const terminalRef = useRef<HTMLDivElement>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isVM, setIsVM] = useState(false);
   const [mode, setMode] = useState<"serial" | "display">(initialMode);
   const [displayConnected, setDisplayConnected] = useState(false);
@@ -53,120 +49,26 @@ function ConsoleContent() {
     };
   }, [name, namespace]);
 
-  const connect = useCallback(() => {
-    if (!terminalRef.current) return;
+  const serial = useSerialConsole({
+    workspaceName: name,
+    namespace,
+    containerRef: terminalRef,
+    isVM,
+    // Clean closes: "taken over" (VM console evicted) just shows the message;
+    // a shell exit in a container workspace should also close this tab.
+    onCleanClose: (reason) => {
+      if (reason.startsWith("taken over") || isVM) return;
+      window.close();
+    },
+  });
 
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
-      theme: {
-        background: "#1a1b26",
-        foreground: "#a9b1d6",
-        cursor: "#c0caf5",
-        selectionBackground: "#33467c",
-        black: "#15161e",
-        red: "#f7768e",
-        green: "#9ece6a",
-        yellow: "#e0af68",
-        blue: "#7aa2f7",
-        magenta: "#bb9af7",
-        cyan: "#7dcfff",
-        white: "#a9b1d6",
-        brightBlack: "#414868",
-        brightRed: "#f7768e",
-        brightGreen: "#9ece6a",
-        brightYellow: "#e0af68",
-        brightBlue: "#7aa2f7",
-        brightMagenta: "#bb9af7",
-        brightCyan: "#7dcfff",
-        brightWhite: "#c0caf5",
-      },
-      allowProposedApi: true,
-    });
-
-    const fit = new FitAddon();
-    const webLinks = new WebLinksAddon();
-
-    term.loadAddon(fit);
-    term.loadAddon(webLinks);
-    term.open(terminalRef.current);
-
-    setTimeout(() => fit.fit(), 50);
-
-    // Set page title
-    document.title = `Console: ${name}`;
-
-    // WebSocket connection
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const cols = term.cols;
-    const rows = term.rows;
-    const wsUrl = `${protocol}//${host}${API_BASE}/v1/workspaces/${name}/exec?namespace=${namespace}&cols=${cols}&rows=${rows}`;
-
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = "arraybuffer";
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      setError(null);
-      term.focus();
-    };
-
-    ws.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(event.data));
-      } else {
-        term.write(event.data);
-      }
-    };
-
-    ws.onclose = (event) => {
-      setIsConnected(false);
-      if (event.code === 1000) {
-        // Clean shell exit — show exit message and try to close the tab
-        term.write("\r\n\x1b[32mShell exited. You may close this tab.\x1b[0m\r\n");
-        // Try to close (works if opened via window.open)
-        window.close();
-      } else {
-        term.write("\r\n\x1b[31mConnection closed.\x1b[0m\r\n");
-      }
-    };
-
-    ws.onerror = () => {
-      setError("Failed to connect to workspace terminal");
-      setIsConnected(false);
-    };
-
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
-      }
-    });
-
-    term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols, rows }));
-      }
-    });
-
-    const handleResize = () => fit.fit();
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      ws.close();
-      term.dispose();
-    };
-  }, [name, namespace]);
+  const { connect, dispose } = serial;
 
   useEffect(() => {
     if (mode !== "serial") return;
-    const cleanup = connect();
-    return () => {
-      if (cleanup) cleanup();
-    };
-  }, [connect, mode]);
+    connect();
+    return dispose;
+  }, [mode, connect, dispose]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#1a1b26]">
@@ -175,7 +77,7 @@ function ConsoleContent() {
         <div className="flex items-center gap-3">
           <div
             className={`w-2.5 h-2.5 rounded-full ${
-              (mode === "serial" ? isConnected : displayConnected) ? "bg-green-500" : "bg-red-500"
+              (mode === "serial" ? serial.isConnected : displayConnected) ? "bg-green-500" : "bg-red-500"
             }`}
           />
           <span className="text-sm font-medium text-gray-200">
@@ -209,7 +111,7 @@ function ConsoleContent() {
         </div>
         <span className="text-xs text-gray-500">
           {mode === "serial"
-            ? isConnected
+            ? serial.isConnected
               ? "Connected"
               : "Disconnected"
             : displayConnected
@@ -228,19 +130,42 @@ function ConsoleContent() {
           />
         ) : (
           <>
-            {error && (
+            {serial.error && !serial.takeoverPrompt && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
                 <div className="text-center">
-                  <p className="text-red-400 text-sm mb-2">{error}</p>
+                  <p className="text-red-400 text-sm mb-2">{serial.error}</p>
                   <button
-                    onClick={() => {
-                      setError(null);
-                      connect();
-                    }}
+                    onClick={() => serial.connect()}
                     className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
                   >
                     Reconnect
                   </button>
+                </div>
+              </div>
+            )}
+            {serial.takeoverPrompt && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
+                <div className="text-center max-w-md px-6">
+                  <p className="text-gray-200 text-sm font-medium mb-1">Console in use</p>
+                  <p className="text-gray-500 text-xs mb-4">
+                    Another session is connected to this serial console. Disconnect it and take over?
+                  </p>
+                  <div className="flex justify-center gap-3">
+                    <button
+                      onClick={serial.handleTakeoverCancel}
+                      disabled={serial.takeoverBusy}
+                      className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={serial.handleTakeover}
+                      disabled={serial.takeoverBusy}
+                      className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors disabled:opacity-50"
+                    >
+                      {serial.takeoverBusy ? "Taking over…" : "Take over"}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

@@ -297,6 +297,32 @@ export async function resetWorkspace(name: string, namespace: string = "workspac
   return res.json();
 }
 
+export async function checkSerialConsoleInUse(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/console/status?namespace=${namespace}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to check serial console");
+  const data = await res.json();
+  return data.inUse === true;
+}
+
+export async function takeOverSerialConsole(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/console/takeover?namespace=${namespace}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to take over serial console");
+  const data = await res.json();
+  return data.wasInUse === true;
+}
+
 // Volume API
 export async function listVolumes(namespace: string = "_all"): Promise<Volume[]> {
   const res = await fetch(`${API_BASE}/v1/volumes?namespace=${namespace}`, {
