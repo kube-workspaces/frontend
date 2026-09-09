@@ -155,26 +155,6 @@ export default function TerminalModal({
             <span className="text-xs text-gray-500">({namespace})</span>
           </div>
           <div className="flex items-center gap-1">
-            {/* Open in new tab */}
-            <button
-              onClick={handleOpenInNewTab}
-              className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
-              title="Open in new tab"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={1.5}
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
-                />
-              </svg>
-            </button>
             {/* VM workspaces: switch between serial / SSH / graphical display */}
             {isVM && mode !== "display" && (
               <button
@@ -265,6 +245,26 @@ export default function TerminalModal({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   d="M3.75 15.75h16.5M3.75 12h16.5"
+                />
+              </svg>
+            </button>
+            {/* Open in new tab */}
+            <button
+              onClick={handleOpenInNewTab}
+              className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+              title="Open in new tab"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
                 />
               </svg>
             </button>
