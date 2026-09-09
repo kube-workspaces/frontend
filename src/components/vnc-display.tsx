@@ -56,16 +56,18 @@ export default function VncDisplay({
       // Prefer a raw-binary subprotocol; the API bridge echoes whichever the
       // client offers (binary / base64 / plain.kubevirt.io).
       wsProtocols: ["binary", "plain.kubevirt.io"],
-      // Expand the remote framebuffer to fill the modal: scaleViewport scales
-      // it to fit the container, and resizeSession asks the VM/backend to
-      // resize its display (SetDesktopSize) to match the frontend window size
-      // as the modal grows/shrinks. noVNC observes the container via
-      // ResizeObserver, so maximising/restoring the modal re-requests a size.
-      scaleViewport: true,
-      resizeSession: true,
-      clipViewport: false,
-      viewOnly: false,
     });
+    // noVNC 1.7.0: scaleViewport/resizeSession/clipViewport/viewOnly are NOT
+    // constructor options — they are silently ignored there and must be set as
+    // properties after construction (this was the root cause of fluid resize
+    // never working: resizeSession was never actually enabled).
+    //   scaleViewport: scale the framebuffer to fill the container.
+    //   resizeSession: ask the backend (QEMU via the VNC SetDesktopSize
+    //     extension) to resize the guest display to match the container.
+    rfb.scaleViewport = true;
+    rfb.resizeSession = true;
+    rfb.clipViewport = false;
+    rfb.viewOnly = false;
     rfbRef.current = rfb;
 
     rfb.addEventListener("connect", () => {
