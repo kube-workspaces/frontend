@@ -31,7 +31,10 @@ export default function SSHCredentialForm({
               value={user}
               onChange={(e) => setUser(e.target.value)}
               className="w-full px-3 py-2 text-sm bg-[#24283b] border border-gray-700 rounded text-gray-200 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] font-mono"
-              autoComplete="username"
+              // The username defaults to the image's default user; autoComplete
+              // must stay "off" or the browser autofills a saved credential
+              // (e.g. "admin") over it.
+              autoComplete="off"
               spellCheck={false}
             />
           </div>
@@ -45,6 +48,7 @@ export default function SSHCredentialForm({
               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
               rows={6}
               className="w-full px-3 py-2 text-xs bg-[#24283b] border border-gray-700 rounded text-gray-200 focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)] font-mono resize-y"
+              autoComplete="off"
               spellCheck={false}
             />
           </div>
