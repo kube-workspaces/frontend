@@ -100,10 +100,10 @@ export default function VncDisplay({
       }
 
       try {
-        if (rfbRef.current && typeof (rfbRef.current as any).sendPointerEvent === "function") {
-          (rfbRef.current as any).sendPointerEvent(x, y, buttonMask);
+        if (rfbRef.current) {
+          rfbRef.current.sendPointerEvent(x, y, buttonMask);
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
     };

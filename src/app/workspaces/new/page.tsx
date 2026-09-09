@@ -452,8 +452,7 @@ function NewWorkspaceForm() {
           </div>
         </div>
 
-        {/* GPU Section (not applicable to VM workspaces) */}
-        {workspaceType !== "vm" && (
+        {/* GPU Section */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-medium text-gray-600 dark:text-gray-400">GPU{getFieldLock("gpu") && renderLockBadge(getFieldLock("gpu")!)}</label>
@@ -488,7 +487,6 @@ function NewWorkspaceForm() {
             </div>
           )}
         </div>
-        )}
 
         {/* Shared Memory Section (not applicable to VM workspaces) */}
         {workspaceType !== "vm" && (

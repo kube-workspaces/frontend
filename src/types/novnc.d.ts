@@ -50,6 +50,7 @@ declare module "@novnc/novnc" {
     disconnect();
     connect(url: string, options?: { wsProtocols?: string[] });
     sendCredentials(credentials: { username?: string; password?: string; target?: string });
+    sendPointerEvent(x: number, y: number, buttonMask: number);
     sendCtrlAltDel();
     sendKey(keyCode: number);
     machineShutdown();
