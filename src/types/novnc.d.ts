@@ -51,6 +51,7 @@ declare module "@novnc/novnc" {
     connect(url: string, options?: { wsProtocols?: string[] });
     sendCredentials(credentials: { username?: string; password?: string; target?: string });
     sendPointerEvent(x: number, y: number, buttonMask: number);
+    setDesktopSize(width: number, height: number): void;
     sendCtrlAltDel();
     sendKey(keyCode: number);
     machineShutdown();

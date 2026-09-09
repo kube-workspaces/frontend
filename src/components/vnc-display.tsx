@@ -29,6 +29,8 @@ export default function VncDisplay({
   const disposed = useRef(false);
   const mountRFBRef = useRef<() => void>(() => {});
   const pointerDownHandlerRef = useRef<(() => void) | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const resizeTimerRef = useRef<number | null>(null);
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -119,6 +121,30 @@ export default function VncDisplay({
       container.addEventListener("pointerdown", handlePointerEvent);
       container.addEventListener("pointerup", handlePointerEvent);
     }
+    // Fluid display: whenever the modal/viewport container changes size, ask
+    // the backend (QEMU, via the VNC SetDesktopSize extension over the bridge)
+    // to resize the guest display to match, debounced. scaleViewport keeps the
+    // framebuffer filling the container in the meantime.
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => {
+        if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = window.setTimeout(() => {
+          const rfb = rfbRef.current;
+          const el = mountRef.current;
+          if (!rfb || !el) return;
+          const w = Math.floor(el.clientWidth || 0);
+          const h = Math.floor(el.clientHeight || 0);
+          if (w <= 0 || h <= 0) return;
+          try {
+            rfb.setDesktopSize(w, h);
+          } catch {
+            // server/guest may not support SetDesktopSize — scaling still applies
+          }
+        }, 150);
+      });
+      if (container) ro.observe(container);
+      resizeObserverRef.current = ro;
+    }
     rfb.addEventListener("disconnect", (e: Event) => {
       const detail = (e as CustomEvent<{ clean?: boolean; reason?: string }>).detail;
       const reason = detail?.reason || "";
@@ -163,6 +189,11 @@ export default function VncDisplay({
     return () => {
       disposed.current = true;
       if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
+      if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
       if (container && pointerDownHandlerRef.current) {
         container.removeEventListener("pointermove", pointerDownHandlerRef.current);
         container.removeEventListener("pointerdown", pointerDownHandlerRef.current);

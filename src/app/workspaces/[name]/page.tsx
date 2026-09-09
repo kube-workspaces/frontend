@@ -434,7 +434,7 @@ export default function WorkspaceDetailPage() {
                 setTerminalMode("display");
                 setTerminalOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-[var(--color-primary)] hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               title="Open the graphical display (noVNC)"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
