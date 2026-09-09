@@ -428,6 +428,21 @@ export default function WorkspaceDetailPage() {
               Connect
             </a>
           )}
+          {isVM && workspace.ready_replicas > 0 && !workspace.stopped && (
+            <button
+              onClick={() => {
+                setTerminalMode("display");
+                setTerminalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] transition-colors"
+              title="Open the graphical display (noVNC)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.5a3 3 0 00-3 3h12a3 3 0 00-3-3v-1.5M6 20.25h12M6 3.75h12a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H6a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5z" />
+              </svg>
+              Connect
+            </button>
+          )}
           {workspace.ready_replicas > 0 && !workspace.stopped && (
             <button
               onClick={() => {
