@@ -54,8 +54,13 @@ export default function VncDisplay({
       // Prefer a raw-binary subprotocol; the API bridge echoes whichever the
       // client offers (binary / base64 / plain.kubevirt.io).
       wsProtocols: ["binary", "plain.kubevirt.io"],
-      scaleViewport: false,
-      resizeSession: false,
+      // Expand the remote framebuffer to fill the modal: scaleViewport scales
+      // it to fit the container, and resizeSession asks the VM/backend to
+      // resize its display (SetDesktopSize) to match the frontend window size
+      // as the modal grows/shrinks. noVNC observes the container via
+      // ResizeObserver, so maximising/restoring the modal re-requests a size.
+      scaleViewport: true,
+      resizeSession: true,
       clipViewport: false,
       viewOnly: false,
     });
@@ -72,20 +77,20 @@ export default function VncDisplay({
     const container = mountRef.current;
     const handlePointerEvent = (e: PointerEvent) => {
       if (!rfbRef.current || !mountRef.current) return;
-      const rect = mountRef.current.getBoundingClientRect();
-      const width = rect.width > 0 ? rect.width : (mountRef.current.clientWidth || 1920);
-      const height = rect.height > 0 ? rect.height : (mountRef.current.clientHeight || 1080);
-      const left = rect.left || 0;
-      const top = rect.top || 0;
+      // Map through the actual rendered framebuffer canvas so coordinates stay
+      // correct no matter how scaleViewport sizes/centres it (letterboxing) and
+      // how resizeSession changes the guest resolution. The canvas drawing
+      // buffer (width/height) holds the framebuffer pixels; its on-screen box
+      // gives the scaled, letterboxed position.
+      const canvas = mountRef.current.querySelector("canvas");
+      if (!canvas) return;
+      const fbW = canvas.width > 0 ? canvas.width : 1920;
+      const fbH = canvas.height > 0 ? canvas.height : 1080;
+      const box = canvas.getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) return;
 
-      const clientX = e.clientX - left;
-      const clientY = e.clientY - top;
-
-      const fbW = 1920;
-      const fbH = 1080;
-
-      const x = Math.max(0, Math.min(fbW, Math.floor((clientX / width) * fbW)));
-      const y = Math.max(0, Math.min(fbH, Math.floor((clientY / height) * fbH)));
+      const x = Math.max(0, Math.min(fbW, Math.floor(((e.clientX - box.left) / box.width) * fbW)));
+      const y = Math.max(0, Math.min(fbH, Math.floor(((e.clientY - box.top) / box.height) * fbH)));
 
       let buttonMask = 0;
       if (e.buttons & 1) buttonMask |= 1;
