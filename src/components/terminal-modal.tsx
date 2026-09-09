@@ -27,6 +27,7 @@ export default function TerminalModal({
 }: TerminalModalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isDocked, setIsDocked] = useState(false);
   const [elapsed, setElapsed] = useState("");
   const startedAt = useRef(0);
   const [mode, setMode] = useState<"serial" | "ssh" | "display">(initialMode);
@@ -121,13 +122,17 @@ export default function TerminalModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      className={`fixed inset-0 z-50 flex items-center justify-center ${
+        isDocked ? "bg-transparent pointer-events-none" : "bg-black/60"
+      }`}
       onClick={(e) => {
-        if (e.target === e.currentTarget && !isMaximized) onClose();
+        if (e.target === e.currentTarget && !isMaximized && !isDocked) onClose();
       }}
     >
       <div
-        className={`bg-[#1a1b26] border border-gray-700 rounded-lg shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
+        className={`${
+          isDocked ? "invisible pointer-events-none" : ""
+        } bg-[#1a1b26] border border-gray-700 rounded-lg shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
           isMaximized
             ? "fixed inset-0 rounded-none border-0"
             : "w-[90vw] h-[80vh] max-w-6xl"
@@ -243,6 +248,26 @@ export default function TerminalModal({
                 </svg>
               )}
             </button>
+            {/* Minimize / Dock */}
+            <button
+              onClick={() => setIsDocked(true)}
+              className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+              title="Minimize"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3.75 15.75h16.5M3.75 12h16.5"
+                />
+              </svg>
+            </button>
             {/* Close */}
             <button
               onClick={onClose}
@@ -352,6 +377,62 @@ export default function TerminalModal({
           <span>{workspaceName}-0</span>
         </div>
       </div>
+
+      {/* Dock bar (visible while minimized) */}
+      {isDocked && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#24283b] border-t border-gray-700 pointer-events-auto flex items-center justify-between px-4 py-1.5 text-xs text-gray-400">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                activeConnected ? "bg-green-500" : "bg-red-500"
+              }`}
+            />
+            <span className="text-gray-200 font-medium truncate">
+              {mode === "display" ? "Display" : mode === "ssh" ? "SSH" : "Console"}: {workspaceName}
+            </span>
+            {activeConnected && elapsed && (
+              <span className="text-gray-500 shrink-0">{elapsed}</span>
+            )}
+            <span className="text-gray-500 truncate">({namespace})</span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => setIsDocked(false)}
+              className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+              title="Raise (restore)"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4.5 12.75l7.5-7.5 7.5 7.5m0-0l-7.5 7.5m7.5-7.5H4.5"
+                />
+              </svg>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-red-600/80 rounded transition-colors"
+              title="Close (Ctrl+Esc)"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
