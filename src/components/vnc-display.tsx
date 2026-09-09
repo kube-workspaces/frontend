@@ -70,14 +70,46 @@ export default function VncDisplay({
     });
 
     const container = mountRef.current;
-    const handlePointerDown = () => {
-      if (rfbRef.current) {
-        rfbRef.current.focus();
+    const handlePointerEvent = (e: PointerEvent) => {
+      if (!rfbRef.current || !mountRef.current) return;
+      const rect = mountRef.current.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const clientX = e.clientX - rect.left;
+      const clientY = e.clientY - rect.top;
+
+      const fbW = 1920;
+      const fbH = 1080;
+
+      const x = Math.max(0, Math.min(fbW, Math.floor((clientX / rect.width) * fbW)));
+      const y = Math.max(0, Math.min(fbH, Math.floor((clientY / rect.height) * fbH)));
+
+      let buttonMask = 0;
+      if (e.buttons & 1) buttonMask |= 1;
+      if (e.buttons & 2) buttonMask |= 2;
+      if (e.buttons & 4) buttonMask |= 4;
+      // also consider e.button if pointerdown/up
+      if (e.type === "pointerdown" || e.type === "pointerup") {
+        if (e.button === 0) {
+          if (e.type === "pointerdown") buttonMask |= 1;
+          else buttonMask &= ~1;
+        }
+      }
+
+      try {
+        if (rfbRef.current && typeof rfbRef.current.sendPointerEvent === "function") {
+          rfbRef.current.sendPointerEvent(x, y, buttonMask);
+        }
+      } catch (err) {
+        // ignore
       }
     };
-    pointerDownHandlerRef.current = handlePointerDown;
+
+    pointerDownHandlerRef.current = handlePointerEvent as unknown as () => void;
     if (container) {
-      container.addEventListener("pointerdown", handlePointerDown);
+      container.addEventListener("pointermove", handlePointerEvent);
+      container.addEventListener("pointerdown", handlePointerEvent);
+      container.addEventListener("pointerup", handlePointerEvent);
     }
     rfb.addEventListener("disconnect", (e: Event) => {
       const detail = (e as CustomEvent<{ clean?: boolean; reason?: string }>).detail;
@@ -124,7 +156,9 @@ export default function VncDisplay({
       disposed.current = true;
       if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
       if (container && pointerDownHandlerRef.current) {
+        container.removeEventListener("pointermove", pointerDownHandlerRef.current);
         container.removeEventListener("pointerdown", pointerDownHandlerRef.current);
+        container.removeEventListener("pointerup", pointerDownHandlerRef.current);
       }
       if (rfbRef.current) {
         rfbRef.current.disconnect();
