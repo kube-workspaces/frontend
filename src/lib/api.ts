@@ -333,6 +333,80 @@ export async function takeOverSerialConsole(
   return data.wasInUse === true;
 }
 
+// Web SSH console API
+export interface SshKey {
+  name: string;
+  namespace: string;
+  key_name?: string;
+  public_key: string;
+  fingerprint?: string;
+  created_at?: string;
+}
+
+export async function listSshKeys(namespace: string = ""): Promise<SshKey[]> {
+  const qs = namespace ? `?namespace=${namespace}` : "";
+  const res = await fetch(`${API_BASE}/v1/sshkeys${qs}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to list SSH keys");
+  return res.json();
+}
+
+export async function createSshKey(payload: {
+  name: string;
+  namespace?: string;
+  key_name?: string;
+  public_key: string;
+}): Promise<SshKey> {
+  const res = await fetch(`${API_BASE}/v1/sshkeys`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Failed to create SSH key: ${body || res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteSshKey(name: string, namespace: string = ""): Promise<void> {
+  const qs = namespace ? `?namespace=${namespace}` : "";
+  const res = await fetch(`${API_BASE}/v1/sshkeys/${name}${qs}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to delete SSH key");
+}
+
+export async function checkSSHConsoleInUse(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/ssh/status?namespace=${namespace}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to check SSH console");
+  const data = await res.json();
+  return data.inUse === true;
+}
+
+export async function takeOverSSHConsole(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/ssh/takeover?namespace=${namespace}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to take over SSH console");
+  const data = await res.json();
+  return data.wasInUse === true;
+}
+
 // Volume API
 export async function listVolumes(namespace: string = "_all"): Promise<Volume[]> {
   const res = await fetch(`${API_BASE}/v1/volumes?namespace=${namespace}`, {

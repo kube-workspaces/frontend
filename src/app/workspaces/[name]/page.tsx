@@ -77,6 +77,7 @@ export default function WorkspaceDetailPage() {
   const [metricsWindow, setMetricsWindow] = useState("1h");
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalMode, setTerminalMode] = useState<"serial" | "ssh" | "display">("serial");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [rebootDialogOpen, setRebootDialogOpen] = useState(false);
 
@@ -429,13 +430,30 @@ export default function WorkspaceDetailPage() {
           )}
           {workspace.ready_replicas > 0 && !workspace.stopped && (
             <button
-              onClick={() => setTerminalOpen(true)}
+              onClick={() => {
+                setTerminalMode("serial");
+                setTerminalOpen(true);
+              }}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
               </svg>
               Console
+            </button>
+          )}
+          {isVM && workspace.ready_replicas > 0 && !workspace.stopped && (
+            <button
+              onClick={() => {
+                setTerminalMode("ssh");
+                setTerminalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-9A2.25 2.25 0 003 5.25v13.5A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V15M18 12l2.25 2.25M18 12l-2.25 2.25M18 12h-4.5" />
+              </svg>
+              SSH
             </button>
           )}
           <button
@@ -588,6 +606,8 @@ export default function WorkspaceDetailPage() {
           workspaceName={workspace.name}
           namespace={workspace.namespace}
           isVM={workspace.type === "vm"}
+          initialMode={terminalMode}
+          sshDefaultUser={images.find((i) => i.image === workspace.image)?.default_user}
           onClose={() => setTerminalOpen(false)}
         />
       )}

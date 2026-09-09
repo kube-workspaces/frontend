@@ -3,13 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { useSerialConsole } from "@/lib/use-serial-console";
+import { useSSHConsole } from "@/lib/use-ssh-console";
 import VncDisplay from "@/components/vnc-display";
+import SSHCredentialForm from "@/components/ssh-credential-form";
 
 interface TerminalModalProps {
   workspaceName: string;
   namespace: string;
   onClose: () => void;
   isVM?: boolean;
+  initialMode?: "serial" | "ssh" | "display";
+  /** Guest login hinted to the SSH credential form (usually the image's default user). */
+  sshDefaultUser?: string;
 }
 
 export default function TerminalModal({
@@ -17,12 +22,16 @@ export default function TerminalModal({
   namespace,
   onClose,
   isVM = false,
+  initialMode = "serial",
+  sshDefaultUser,
 }: TerminalModalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [elapsed, setElapsed] = useState("");
   const startedAt = useRef(0);
-  const [mode, setMode] = useState<"serial" | "display">("serial");
+  const [mode, setMode] = useState<"serial" | "ssh" | "display">(initialMode);
+  const [sshUser, setSshUser] = useState("");
+  const [sshPrivateKey, setSshPrivateKey] = useState("");
   const [displayConnected, setDisplayConnected] = useState(false);
 
   const serial = useSerialConsole({
@@ -37,6 +46,17 @@ export default function TerminalModal({
     },
   });
 
+  const ssh = useSSHConsole({
+    workspaceName,
+    namespace,
+    containerRef: terminalRef,
+    user: sshUser,
+    privateKey: sshPrivateKey,
+    onCleanClose: (reason) => {
+      if (!reason.startsWith("taken over")) onClose();
+    },
+  });
+
   const { connect, dispose } = serial;
 
   useEffect(() => {
@@ -44,6 +64,15 @@ export default function TerminalModal({
     connect();
     return dispose;
   }, [mode, connect, dispose]);
+
+  const sshConnect = ssh.connect;
+  const sshDispose = ssh.dispose;
+
+  useEffect(() => {
+    if (mode !== "ssh" || !sshUser || !sshPrivateKey) return;
+    sshConnect();
+    return sshDispose;
+  }, [mode, sshUser, sshPrivateKey, sshConnect, sshDispose]);
 
   // Close on Ctrl+Escape.
   useEffect(() => {
@@ -56,7 +85,9 @@ export default function TerminalModal({
 
   // Session duration timer
   useEffect(() => {
-    if (mode !== "serial" ? !displayConnected : !serial.isConnected) return;
+    const active =
+      mode === "display" ? displayConnected : mode === "ssh" ? ssh.isConnected : serial.isConnected;
+    if (!active) return;
     startedAt.current = Date.now();
     const tick = () => {
       const secs = Math.floor((Date.now() - startedAt.current) / 1000);
@@ -72,20 +103,21 @@ export default function TerminalModal({
     tick();
     const interval = setInterval(tick, 1000);
     return () => { clearInterval(interval); };
-  }, [mode, serial.isConnected, displayConnected]);
+  }, [mode, serial.isConnected, ssh.isConnected, displayConnected]);
 
   const handleOpenInNewTab = () => {
     window.open(
-      `/workspaces/${workspaceName}/console?namespace=${namespace}`,
+      `/workspaces/${workspaceName}/console?namespace=${namespace}&mode=${mode}`,
       "_blank"
     );
     onClose();
   };
 
-  const handleOpenDisplay = () => {
-    setMode(mode === "display" ? "serial" : "display");
-    setElapsed("");
-  };
+  const activeConnected = mode === "display"
+    ? displayConnected
+    : mode === "ssh"
+    ? ssh.isConnected
+    : serial.isConnected;
 
   return (
     <div
@@ -108,14 +140,12 @@ export default function TerminalModal({
             <div className="flex items-center gap-1.5">
               <div
                 className={`w-3 h-3 rounded-full ${
-                  mode === "display" ? displayConnected : serial.isConnected
-                    ? "bg-green-500"
-                    : "bg-red-500"
+                  activeConnected ? "bg-green-500" : "bg-red-500"
                 }`}
               />
             </div>
             <span className="text-sm font-medium text-gray-200">
-              {mode === "display" ? "Display" : "Console"}: {workspaceName}
+              {mode === "display" ? "Display" : mode === "ssh" ? "SSH" : "Console"}: {workspaceName}
             </span>
             <span className="text-xs text-gray-500">({namespace})</span>
           </div>
@@ -140,14 +170,41 @@ export default function TerminalModal({
                 />
               </svg>
             </button>
-            {/* Open VNC display for VM workspaces */}
-            {isVM && (
+            {/* VM workspaces: switch between serial / SSH / graphical display */}
+            {isVM && mode !== "display" && (
               <button
-                onClick={handleOpenDisplay}
+                onClick={() => setMode("display")}
                 className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
-                title={mode === "display" ? "Back to serial console" : "Open graphical display (noVNC)"}
+                title="Open graphical display (noVNC)"
               >
-                {mode === "display" ? "Console" : "Display"}
+                Display
+              </button>
+            )}
+            {isVM && mode === "display" && (
+              <button
+                onClick={() => setMode("serial")}
+                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+                title="Back to serial console"
+              >
+                Console
+              </button>
+            )}
+            {isVM && mode !== "ssh" && (
+              <button
+                onClick={() => setMode("ssh")}
+                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+                title="SSH console"
+              >
+                SSH
+              </button>
+            )}
+            {isVM && mode === "ssh" && (
+              <button
+                onClick={() => setMode("serial")}
+                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+                title="Back to serial console"
+              >
+                Console
               </button>
             )}
             {/* Maximize/Restore */}
@@ -219,12 +276,26 @@ export default function TerminalModal({
             />
           ) : (
             <>
-              {serial.error && !serial.takeoverPrompt && (
+              {mode === "ssh" && (!sshUser || !sshPrivateKey) && (
+                <SSHCredentialForm
+                  defaultUser={sshDefaultUser}
+                  onSubmit={(user, key) => {
+                    setSshUser(user);
+                    setSshPrivateKey(key);
+                  }}
+                />
+              )}
+              {(mode !== "ssh" ? serial.error : ssh.error) &&
+                !(mode === "ssh" ? ssh.takeoverPrompt : serial.takeoverPrompt) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
                   <div className="text-center">
-                    <p className="text-red-400 text-sm mb-2">{serial.error}</p>
+                    <p className="text-red-400 text-sm mb-2">
+                      {mode === "ssh" ? ssh.error : serial.error}
+                    </p>
                     <button
-                      onClick={() => serial.connect()}
+                      onClick={() =>
+                        mode === "ssh" ? ssh.connect() : serial.connect()
+                      }
                       className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
                     >
                       Reconnect
@@ -232,27 +303,29 @@ export default function TerminalModal({
                   </div>
                 </div>
               )}
-              {serial.takeoverPrompt && (
+              {(mode === "ssh" ? ssh.takeoverPrompt : serial.takeoverPrompt) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
                   <div className="text-center max-w-md px-6">
-                    <p className="text-gray-200 text-sm font-medium mb-1">Console in use</p>
+                    <p className="text-gray-200 text-sm font-medium mb-1">
+                      {mode === "ssh" ? "SSH console in use" : "Console in use"}
+                    </p>
                     <p className="text-gray-500 text-xs mb-4">
-                      Another session is connected to this serial console. Disconnect it and take over?
+                      Another session is connected to this {mode === "ssh" ? "SSH console" : "serial console"}. Disconnect it and take over?
                     </p>
                     <div className="flex justify-center gap-3">
                       <button
-                        onClick={serial.handleTakeoverCancel}
-                        disabled={serial.takeoverBusy}
+                        onClick={mode === "ssh" ? ssh.handleTakeoverCancel : serial.handleTakeoverCancel}
+                        disabled={mode === "ssh" ? ssh.takeoverBusy : serial.takeoverBusy}
                         className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors disabled:opacity-50"
                       >
                         Cancel
                       </button>
                       <button
-                        onClick={serial.handleTakeover}
-                        disabled={serial.takeoverBusy}
+                        onClick={mode === "ssh" ? ssh.handleTakeover : serial.handleTakeover}
+                        disabled={mode === "ssh" ? ssh.takeoverBusy : serial.takeoverBusy}
                         className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors disabled:opacity-50"
                       >
-                        {serial.takeoverBusy ? "Taking over…" : "Take over"}
+                        {(mode === "ssh" ? ssh.takeoverBusy : serial.takeoverBusy) ? "Taking over…" : "Take over"}
                       </button>
                     </div>
                   </div>
@@ -268,8 +341,10 @@ export default function TerminalModal({
           <span>
             {mode === "display"
               ? displayConnected ? "Display connected" : "Display disconnected"
+              : mode === "ssh"
+              ? ssh.isConnected ? "SSH connected" : "SSH disconnected"
               : serial.isConnected ? "Connected" : "Disconnected"}
-            {(mode === "display" ? displayConnected : serial.isConnected) && elapsed && (
+            {activeConnected && elapsed && (
               <span className="ml-2 text-gray-600">{elapsed}</span>
             )}
             {" "}| Ctrl+Esc to close

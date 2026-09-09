@@ -3,9 +3,13 @@
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { getWorkspace } from "@/lib/api";
+import { getWorkspace, listImages } from "@/lib/api";
 import { useSerialConsole } from "@/lib/use-serial-console";
+import { useSSHConsole } from "@/lib/use-ssh-console";
 import VncDisplay from "@/components/vnc-display";
+import SSHCredentialForm from "@/components/ssh-credential-form";
+
+type ConsoleMode = "serial" | "ssh" | "display";
 
 export default function ConsolePage() {
   return (
@@ -26,20 +30,38 @@ function ConsoleContent() {
   const searchParams = useSearchParams();
   const name = params.name as string;
   const namespace = searchParams.get("namespace") || "workspaces";
-  const initialMode = searchParams.get("mode") === "display" ? "display" : "serial";
+  const initialMode =
+    searchParams.get("mode") === "display"
+      ? "display"
+      : searchParams.get("mode") === "ssh"
+        ? "ssh"
+        : "serial";
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const [isVM, setIsVM] = useState(false);
-  const [mode, setMode] = useState<"serial" | "display">(initialMode);
+  const [sshDefaultUser, setSshDefaultUser] = useState("debian");
+  const [sshUser, setSshUser] = useState("");
+  const [sshPrivateKey, setSshPrivateKey] = useState("");
+  const [mode, setMode] = useState<ConsoleMode>(initialMode);
   const [displayConnected, setDisplayConnected] = useState(false);
 
   // VM workspaces expose a graphical VNC display alongside the serial console;
-  // container/scratch workspaces only have a terminal.
+  // container/scratch workspaces only have a terminal. The image's default user
+  // is hinted to the SSH credential form.
   useEffect(() => {
     let cancelled = false;
     getWorkspace(name, namespace)
-      .then((ws) => {
-        if (!cancelled) setIsVM(ws.type === "vm");
+      .then(async (ws) => {
+        if (cancelled) return;
+        setIsVM(ws.type === "vm");
+        try {
+          const images = await listImages();
+          const img = images.find((i) => i.image === ws.image);
+          if (!cancelled && img?.default_user)
+            setSshDefaultUser(img.default_user);
+        } catch {
+          // keep the fallback default user
+        }
       })
       .catch(() => {
         if (!cancelled) setIsVM(false);
@@ -62,13 +84,41 @@ function ConsoleContent() {
     },
   });
 
-  const { connect, dispose } = serial;
+  const ssh = useSSHConsole({
+    workspaceName: name,
+    namespace,
+    containerRef: terminalRef,
+    user: sshUser,
+    privateKey: sshPrivateKey,
+    onCleanClose: (reason) => {
+      if (!reason.startsWith("taken over")) window.close();
+    },
+  });
+
+  const activeConnected =
+    mode === "display"
+      ? displayConnected
+      : mode === "ssh"
+        ? ssh.isConnected
+        : serial.isConnected;
+
+  const serialConnect = serial.connect;
+  const serialDispose = serial.dispose;
 
   useEffect(() => {
     if (mode !== "serial") return;
-    connect();
-    return dispose;
-  }, [mode, connect, dispose]);
+    serialConnect();
+    return serialDispose;
+  }, [mode, serialConnect, serialDispose]);
+
+  const sshConnect = ssh.connect;
+  const sshDispose = ssh.dispose;
+
+  useEffect(() => {
+    if (mode !== "ssh" || !sshUser || !sshPrivateKey) return;
+    sshConnect();
+    return sshDispose;
+  }, [mode, sshUser, sshPrivateKey, sshConnect, sshDispose]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#1a1b26]">
@@ -77,12 +127,10 @@ function ConsoleContent() {
         <div className="flex items-center gap-3">
           <div
             className={`w-2.5 h-2.5 rounded-full ${
-              (mode === "serial" ? serial.isConnected : displayConnected) ? "bg-green-500" : "bg-red-500"
+              activeConnected ? "bg-green-500" : "bg-red-500"
             }`}
           />
-          <span className="text-sm font-medium text-gray-200">
-            {name}
-          </span>
+          <span className="text-sm font-medium text-gray-200">{name}</span>
           <span className="text-xs text-gray-500">({namespace})</span>
           {isVM && (
             <div className="ml-2 flex items-center gap-1 bg-[#1a1b26] rounded-md p-0.5 border border-gray-700">
@@ -95,6 +143,16 @@ function ConsoleContent() {
                 }`}
               >
                 Serial
+              </button>
+              <button
+                onClick={() => setMode("ssh")}
+                className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
+                  mode === "ssh"
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                }`}
+              >
+                SSH
               </button>
               <button
                 onClick={() => setMode("display")}
@@ -110,13 +168,17 @@ function ConsoleContent() {
           )}
         </div>
         <span className="text-xs text-gray-500">
-          {mode === "serial"
-            ? serial.isConnected
+          {mode === "display"
+            ? displayConnected
               ? "Connected"
               : "Disconnected"
-            : displayConnected
-            ? "Connected"
-            : "Disconnected"}
+            : mode === "ssh"
+              ? ssh.isConnected
+                ? "Connected"
+                : "Disconnected"
+              : serial.isConnected
+                ? "Connected"
+                : "Disconnected"}
         </span>
       </div>
 
@@ -130,40 +192,74 @@ function ConsoleContent() {
           />
         ) : (
           <>
-            {serial.error && !serial.takeoverPrompt && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
-                <div className="text-center">
-                  <p className="text-red-400 text-sm mb-2">{serial.error}</p>
-                  <button
-                    onClick={() => serial.connect()}
-                    className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
-                  >
-                    Reconnect
-                  </button>
-                </div>
-              </div>
+            {mode === "ssh" && (!sshUser || !sshPrivateKey) && (
+              <SSHCredentialForm
+                defaultUser={sshDefaultUser}
+                onSubmit={(user, key) => {
+                  setSshUser(user);
+                  setSshPrivateKey(key);
+                }}
+              />
             )}
-            {serial.takeoverPrompt && (
+            {(mode !== "ssh" ? serial.error : ssh.error) &&
+              !(mode === "ssh"
+                ? ssh.takeoverPrompt
+                : serial.takeoverPrompt) && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
+                  <div className="text-center">
+                    <p className="text-red-400 text-sm mb-2">
+                      {mode === "ssh" ? ssh.error : serial.error}
+                    </p>
+                    <button
+                      onClick={() =>
+                        mode === "ssh" ? ssh.connect() : serial.connect()
+                      }
+                      className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
+                    >
+                      Reconnect
+                    </button>
+                  </div>
+                </div>
+              )}
+            {(mode === "ssh" ? ssh.takeoverPrompt : serial.takeoverPrompt) && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]/90 z-10">
                 <div className="text-center max-w-md px-6">
-                  <p className="text-gray-200 text-sm font-medium mb-1">Console in use</p>
+                  <p className="text-gray-200 text-sm font-medium mb-1">
+                    {mode === "ssh" ? "SSH console in use" : "Console in use"}
+                  </p>
                   <p className="text-gray-500 text-xs mb-4">
-                    Another session is connected to this serial console. Disconnect it and take over?
+                    Another session is connected to this{" "}
+                    {mode === "ssh" ? "SSH console" : "serial console"}.
+                    Disconnect it and take over?
                   </p>
                   <div className="flex justify-center gap-3">
                     <button
-                      onClick={serial.handleTakeoverCancel}
-                      disabled={serial.takeoverBusy}
+                      onClick={
+                        mode === "ssh"
+                          ? ssh.handleTakeoverCancel
+                          : serial.handleTakeoverCancel
+                      }
+                      disabled={
+                        mode === "ssh" ? ssh.takeoverBusy : serial.takeoverBusy
+                      }
                       className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 rounded transition-colors disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
-                      onClick={serial.handleTakeover}
-                      disabled={serial.takeoverBusy}
+                      onClick={
+                        mode === "ssh"
+                          ? ssh.handleTakeover
+                          : serial.handleTakeover
+                      }
+                      disabled={
+                        mode === "ssh" ? ssh.takeoverBusy : serial.takeoverBusy
+                      }
                       className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 text-white rounded transition-colors disabled:opacity-50"
                     >
-                      {serial.takeoverBusy ? "Taking over…" : "Take over"}
+                      {(mode === "ssh" ? ssh.takeoverBusy : serial.takeoverBusy)
+                        ? "Taking over…"
+                        : "Take over"}
                     </button>
                   </div>
                 </div>
