@@ -11,7 +11,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Tailwind CSS v4](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 
-Next.js web UI for managing container-based workspaces in Kubernetes.
+Next.js web UI for managing container-based, VM, and scratch workspaces in Kubernetes.
 
 ## Pages
 
@@ -19,16 +19,16 @@ Next.js web UI for managing container-based workspaces in Kubernetes.
 |-------|-------------|
 | `/` | Dashboard with summary cards (workspaces, running, volumes, images) and workspace list |
 | `/workspaces` | Workspace table with status badges, start/stop/delete/connect actions |
-| `/workspaces/new` | Create workspace form (image selection, resources, volume mounts) |
-| `/workspaces/{name}` | Workspace detail with tabs: Overview, Pod, Metrics, Logs, Events, YAML |
-| `/workspaces/{name}/console` | In-browser terminal console (xterm.js) |
+| `/workspaces/new` | Create workspace form (image selection, type picker, resources, volume mounts, GPU) |
+| `/workspaces/{name}` | Workspace detail with tabs: Overview, Pod, Metrics, Logs, Events, YAML; VM Reboot button; SSH console |
+| `/workspaces/{name}/console` | In-browser terminal console (xterm.js) with serial/SSH/Display modes |
 | `/volumes` | Volume list with phase badges |
 | `/volumes/new` | Create PVC form |
 | `/volumes/{name}` | Volume detail |
 | `/images` | Available workspace images |
 | `/images/{name}` | Image detail |
 | `/login` | Login page |
-| `/profile` | User profile |
+| `/profile` | User profile (incl. SSH key management) |
 | `/docs/godoc` | Embedded Go documentation |
 | `/admin` | Admin index |
 | `/admin/api` | Interactive API documentation (Redoc) |
@@ -40,6 +40,14 @@ Next.js web UI for managing container-based workspaces in Kubernetes.
 - **Namespace filtering** - Global selector in nav bar, persisted in localStorage
 - **Dark mode** - Class-based toggle with localStorage persistence, no flash on load
 - **Workspace proxy** - Connect button opens workspace web UI via `/proxy/` route
+- **VM workspaces** - type picker filtered by `workspaceTypes`, Connect hidden /
+  Console kept for VMs, GPU section shown (volume mounts stay container-only),
+  Reboot button
+- **VM console modal** - serial console / web SSH / noVNC display toggles, with
+  a **Minimize** button that docks the console to a bottom status bar while the
+  session stays alive (and can be raised again)
+- **SSH console** - web SSH session into a VM (transient private-key input) with
+  SSH key management on the profile page
 - **YAML viewer** - Raw CR and Pod YAML with "Clean" toggle to strip ephemeral fields
 - **Real-time updates** - Workspace list auto-refreshes every 5 seconds
 
@@ -96,7 +104,8 @@ The production server additionally recovers "escaped" requests from proxied work
 - [React 19](https://react.dev)
 - [TypeScript](https://www.typescriptlang.org)
 - [Tailwind CSS v4](https://tailwindcss.com) (with `@custom-variant dark` for class-based dark mode)
-- [xterm.js](https://xtermjs.org) (workspace terminal console)
+- [xterm.js](https://xtermjs.org) (workspace terminal / serial / SSH consoles)
+- [@novnc/novnc](https://github.com/novnc/noVNC) (VM noVNC display console)
 - [Recharts](https://recharts.org) and [D3](https://d3js.org) (charts and topology map)
 - [react-markdown](https://github.com/remarkjs/react-markdown) (docs rendering)
 - [yaml](https://eemeli.org/yaml/) package for YAML rendering
@@ -107,12 +116,17 @@ The production server additionally recovers "escaped" requests from proxied work
 | File | Description |
 |------|-------------|
 | `server.mjs` | Dev server with API/proxy forwarding |
-| `server-prod.mjs` | Production server wrapper (proxy routing, escaped request recovery) |
+| `server-prod.mjs` | Production server wrapper (proxy routing, escaped request recovery, `/api`+`/auth` WebSocket upgrades) |
 | `src/lib/api.ts` | API client functions |
 | `src/lib/auth.tsx` | AuthProvider (session context) |
 | `src/lib/theme.tsx` | ThemeProvider (dark mode context) |
 | `src/lib/namespace.tsx` | NamespaceProvider (global namespace filter) |
+| `src/lib/use-serial-console.ts` | Serial console hook (reconnect, take-over) |
+| `src/lib/use-ssh-console.ts` | Web SSH console hook |
 | `src/components/providers.tsx` | Combined context providers |
+| `src/components/terminal-modal.tsx` | VM console modal (serial/SSH/Display, dockable) |
+| `src/components/vnc-display.tsx` | noVNC display component |
+| `src/components/ssh-credential-form.tsx` | Transient private-key input |
 | `src/components/nav-bar.tsx` | Navigation with namespace selector and dark mode toggle |
 | `src/app/globals.css` | Tailwind config, custom variant, base font size |
 | `src/app/layout.tsx` | Root layout with providers |

@@ -28,10 +28,15 @@ npm run lint       # eslint
 - All `fetch()` calls must include `credentials: "include"` (httpOnly cookie auth)
 - No setState in useEffect body — use IIFE with cancellation flag pattern
 - `server.mjs` (dev) proxies `/api/*`, `/auth/*`, `/proxy/*` to the backend
-- `server-prod.mjs` (prod) handles escaped proxy request recovery
+- `server-prod.mjs` (prod) handles escaped proxy request recovery and `/api/*` + `/auth/*` WebSocket upgrades
 - Frontend path blocklist in both servers prevents cookie-based escape recovery from hijacking app routes
 - `NEXT_PUBLIC_API_URL` controls API target (defaults `http://localhost:8090`)
 - Server components use `API_URL` env var for SSR
+- VM console: `src/components/terminal-modal.tsx` toggles serial / SSH / noVNC
+  Display modes; `src/lib/use-serial-console.ts` + `src/lib/use-ssh-console.ts`
+  provide reconnect/take-over; the modal Minimize button docks it to a bottom
+  status bar while keeping the session alive
+- VM Reboot lives on the workspace detail page (`src/app/workspaces/[name]/page.tsx`)
 
 ## Docker Image
 
