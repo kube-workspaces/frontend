@@ -123,26 +123,37 @@ export default function VncDisplay({
     }
     // Fluid display: whenever the modal/viewport container changes size, ask
     // the backend (QEMU, via the VNC SetDesktopSize extension over the bridge)
-    // to resize the guest display to match, debounced. scaleViewport keeps the
-    // framebuffer filling the container in the meantime.
+    // to resize the guest display to match, debounced. We use noVNC's PUBLIC
+    // setters (not rfb.setDesktopSize, which does not exist on the RFB instance
+    // in noVNC 1.7.0):
+    //   - re-assigning rfb.resizeSession re-runs noVNC's _requestRemoteResize(),
+    //     which sends the SetDesktopSize VNC message (only when the server
+    //     negotiated the ExtendedDesktopSize extension);
+    //   - re-assigning rfb.scaleViewport re-runs _updateScale(), which
+    //     rescales the framebuffer canvas to keep filling the container.
+    // scaleViewport/resizeSession are also enabled at construction so the first
+    // connect already fills + resizes.
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(() => {
         if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = window.setTimeout(() => {
           const rfb = rfbRef.current;
+          if (!rfb || disposed.current) return;
           const el = mountRef.current;
-          if (!rfb || !el) return;
-          const w = Math.floor(el.clientWidth || 0);
-          const h = Math.floor(el.clientHeight || 0);
-          if (w <= 0 || h <= 0) return;
+          if (!el || el.clientWidth <= 0 || el.clientHeight <= 0) return;
           try {
-            rfb.setDesktopSize(w, h);
+            // Force noVNC to recompute the client-side scale from the new
+            // container size (always works).
+            rfb.scaleViewport = rfb.scaleViewport;
+            // Force noVNC to (re)request a guest resolution change to match
+            // the container (only takes effect if the server supports it).
+            rfb.resizeSession = rfb.resizeSession;
           } catch {
-            // server/guest may not support SetDesktopSize — scaling still applies
+            // scaling/guest-resize best-effort
           }
         }, 150);
       });
-      if (container) ro.observe(container);
+      ro.observe(container);
       resizeObserverRef.current = ro;
     }
     rfb.addEventListener("disconnect", (e: Event) => {
