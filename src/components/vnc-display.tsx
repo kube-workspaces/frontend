@@ -73,16 +73,19 @@ export default function VncDisplay({
     const handlePointerEvent = (e: PointerEvent) => {
       if (!rfbRef.current || !mountRef.current) return;
       const rect = mountRef.current.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
+      const width = rect.width > 0 ? rect.width : (mountRef.current.clientWidth || 1920);
+      const height = rect.height > 0 ? rect.height : (mountRef.current.clientHeight || 1080);
+      const left = rect.left || 0;
+      const top = rect.top || 0;
 
-      const clientX = e.clientX - rect.left;
-      const clientY = e.clientY - rect.top;
+      const clientX = e.clientX - left;
+      const clientY = e.clientY - top;
 
       const fbW = 1920;
       const fbH = 1080;
 
-      const x = Math.max(0, Math.min(fbW, Math.floor((clientX / rect.width) * fbW)));
-      const y = Math.max(0, Math.min(fbH, Math.floor((clientY / rect.height) * fbH)));
+      const x = Math.max(0, Math.min(fbW, Math.floor((clientX / width) * fbW)));
+      const y = Math.max(0, Math.min(fbH, Math.floor((clientY / height) * fbH)));
 
       let buttonMask = 0;
       if (e.buttons & 1) buttonMask |= 1;
@@ -189,9 +192,10 @@ export default function VncDisplay({
   }
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black flex items-center justify-center">
+    <div className="w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
       <div
         ref={mountRef}
+        className="w-full h-full"
         style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}
       />
       <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
