@@ -54,7 +54,7 @@ export default function VncDisplay({
       // Prefer a raw-binary subprotocol; the API bridge echoes whichever the
       // client offers (binary / base64 / plain.kubevirt.io).
       wsProtocols: ["binary", "plain.kubevirt.io"],
-      scaleViewport: true,
+      scaleViewport: false,
       resizeSession: false,
       clipViewport: false,
       viewOnly: false,
