@@ -19,6 +19,7 @@ import {
   rebootWorkspace,
   deleteWorkspace,
   updateWorkspace,
+  cloneWorkspace,
   listImages,
   listVolumes,
   getWorkspaceMetrics,
@@ -26,6 +27,7 @@ import {
   WorkspaceEvent,
   WorkspaceImage,
   Volume,
+  VolumeMount,
   PodInfo,
   ContainerState,
   ContainerStatus,
@@ -71,6 +73,17 @@ export default function WorkspaceDetailPage() {
     cpu_limit: "2",
     memory_limit: "2Gi",
     volume_mounts: [] as { name: string; mountPath: string }[],
+  });
+
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneForm, setCloneForm] = useState({
+    new_name: "",
+    image: "",
+    port: 8080,
+    cpu_request: "500m",
+    memory_request: "512Mi",
+    cpu_limit: "2",
+    memory_limit: "2Gi",
   });
 
   const [metricsData, setMetricsData] = useState<PodMetricsResponse | null>(null);
@@ -294,6 +307,43 @@ export default function WorkspaceDetailPage() {
     setEditOpen(true);
   };
 
+  const openClone = async () => {
+    if (!workspace) return;
+    const suffix = "-clone";
+    const base = `${workspace.name}${suffix}`;
+    setCloneForm({
+      new_name: base.length <= 63 ? base : `${workspace.name.slice(0, 63 - suffix.length)}${suffix}`,
+      image: workspace.image,
+      port: workspace.port || 8080,
+      cpu_request: workspace.cpu_request || "500m",
+      memory_request: workspace.memory_request || "512Mi",
+      cpu_limit: workspace.cpu_limit || "2",
+      memory_limit: workspace.memory_limit || "2Gi",
+    });
+    setCloneOpen(true);
+  };
+
+  const handleClone = async () => {
+    setActionLoading(true);
+    try {
+      const cloned = await cloneWorkspace(name, {
+        new_name: cloneForm.new_name,
+        image: cloneForm.image,
+        port: cloneForm.port,
+        cpu_request: cloneForm.cpu_request,
+        memory_request: cloneForm.memory_request,
+        cpu_limit: cloneForm.cpu_limit,
+        memory_limit: cloneForm.memory_limit,
+      }, namespace);
+      setCloneOpen(false);
+      router.push(`/workspaces/${cloned.name}?namespace=${namespace}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clone workspace");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleUpdate = async () => {
     setActionLoading(true);
     try {
@@ -479,7 +529,18 @@ export default function WorkspaceDetailPage() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
             </svg>
-            Edit
+Edit
+            </button>
+          <button
+            onClick={openClone}
+            disabled={actionLoading}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+            title="Create a copy of this workspace with a new name. Data volumes are not copied."
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6a2.25 2.25 0 00-2.25-2.25H6A2.25 2.25 0 003.75 6v8.25A2.25 2.25 0 006 16.5h2.25m8.25-8.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-7.5A2.25 2.25 0 018.25 18v-1.5m8.25-8.25h-6a2.25 2.25 0 00-2.25 2.25v6" />
+            </svg>
+            Clone
           </button>
           {workspace.stopped ? (
             <button
@@ -598,6 +659,18 @@ export default function WorkspaceDetailPage() {
         onSave={handleUpdate}
         onCancel={() => setEditOpen(false)}
         saving={actionLoading}
+      />
+
+      <CloneModal
+        open={cloneOpen}
+        form={cloneForm}
+        setForm={setCloneForm}
+        sourceName={workspace.name}
+        mounts={workspace.volume_mounts || []}
+        isVM={isVM}
+        onClone={handleClone}
+        onCancel={() => setCloneOpen(false)}
+        cloning={actionLoading}
       />
 
       <ResetModal
@@ -1854,6 +1927,156 @@ function EditModal({
             className="px-3 py-1.5 text-xs font-medium rounded bg-[var(--color-primary)] text-[var(--color-primary-foreground)] hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CloneModal({
+  open,
+  form,
+  setForm,
+  sourceName,
+  mounts,
+  isVM,
+  onClone,
+  onCancel,
+  cloning,
+}: {
+  open: boolean;
+  form: {
+    new_name: string;
+    image: string;
+    port: number;
+    cpu_request: string;
+    memory_request: string;
+    cpu_limit: string;
+    memory_limit: string;
+  };
+  setForm: (f: typeof form) => void;
+  sourceName: string;
+  mounts: VolumeMount[];
+  isVM: boolean;
+  onClone: () => void;
+  onCancel: () => void;
+  cloning: boolean;
+}) {
+  if (!open) return null;
+
+  const inputClass = "mt-1 block w-full rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 text-sm text-gray-900 dark:text-white px-3 py-2 focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-muted)] outline-none transition-colors";
+  const nameValid = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(form.new_name) && form.new_name.length <= 63;
+  const canClone = nameValid && form.new_name !== sourceName && !!form.image.trim();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-lg rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shadow-xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Clone Workspace</h2>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">New Name</label>
+            <input
+              type="text"
+              value={form.new_name}
+              onChange={(e) => setForm({ ...form, new_name: e.target.value })}
+              className={inputClass}
+            />
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
+              Lowercase letters, digits and &quot;-&quot; only (up to 63 characters).
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Image</label>
+            <input
+              type="text"
+              value={form.image}
+              onChange={(e) => setForm({ ...form, image: e.target.value })}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Port</label>
+            <input
+              type="number"
+              value={form.port}
+              onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 8080 })}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Resources</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] text-gray-400 dark:text-gray-500">CPU Request</label>
+                <input type="text" value={form.cpu_request} onChange={(e) => setForm({ ...form, cpu_request: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 dark:text-gray-500">Memory Request</label>
+                <input type="text" value={form.memory_request} onChange={(e) => setForm({ ...form, memory_request: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 dark:text-gray-500">CPU Limit</label>
+                <input type="text" value={form.cpu_limit} onChange={(e) => setForm({ ...form, cpu_limit: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 dark:text-gray-500">Memory Limit</label>
+                <input type="text" value={form.memory_limit} onChange={(e) => setForm({ ...form, memory_limit: e.target.value })} className={inputClass} />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Volumes &amp; mounts</label>
+            {isVM ? (
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                VM workspaces don&apos;t support volume mounts yet. The clone boots a fresh root disk from the image.
+              </p>
+            ) : mounts.length === 0 ? (
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                This workspace has no additional volume mounts. The clone starts with empty workspace storage.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {mounts.map((vm) => (
+                  <li key={`${vm.name}:${vm.mount_path}`} className="flex items-center gap-2 text-[11px] font-mono text-gray-600 dark:text-gray-400">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                    </svg>
+                    <span>{vm.name}</span>
+                    <span className="text-gray-400 dark:text-gray-500">-&gt;</span>
+                    <span>{vm.mount_path}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
+            <p className="text-[11px] text-amber-800 dark:text-amber-300">
+              The clone does <strong>not</strong> copy any data volumes. It starts with fresh, empty workspace storage.
+              Existing volume mounts will be reattached to the clone, sharing the same volumes as the original workspace.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-800">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs font-medium rounded border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onClone}
+            disabled={cloning || !canClone}
+            className="px-3 py-1.5 text-xs font-medium rounded bg-[var(--color-primary)] text-[var(--color-primary-foreground)] hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {cloning ? "Cloning..." : "Clone Workspace"}
           </button>
         </div>
       </div>

@@ -108,6 +108,16 @@ export interface UpdateWorkspacePayload {
   volume_mounts?: VolumeMount[];
 }
 
+export interface CloneWorkspacePayload {
+  new_name: string;
+  image?: string;
+  port?: number;
+  cpu_request?: string;
+  memory_request?: string;
+  cpu_limit?: string;
+  memory_limit?: string;
+}
+
 export interface Volume {
   name: string;
   namespace: string;
@@ -262,6 +272,20 @@ export async function deleteWorkspace(name: string, namespace: string = "workspa
   if (!res.ok) {
     throw await apiError(res, "Failed to delete workspace");
   }
+}
+
+export async function cloneWorkspace(name: string, payload: CloneWorkspacePayload, namespace: string = "workspaces"): Promise<Workspace> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/clone?namespace=${namespace}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(`Failed to clone workspace: ${error}`);
+  }
+  return res.json();
 }
 
 export async function startWorkspace(name: string, namespace: string = "workspaces"): Promise<Workspace> {
