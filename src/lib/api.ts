@@ -816,3 +816,35 @@ export async function getPlatformConfig(): Promise<PlatformConfigPublic> {
   if (!res.ok) return { maintenance: { enabled: false } };
   return res.json();
 }
+
+// Platform version + component operational status
+export type ComponentStatusState = "healthy" | "starting" | "down";
+
+export interface PlatformComponent {
+  version: string;
+  image: string;
+  status: ComponentStatusState;
+  ready: number;
+  total: number;
+}
+
+export interface PlatformVersion {
+  api: {
+    version: string;
+    commit: string;
+    buildDate: string;
+    go: string;
+    platform: string;
+  };
+  images?: Record<string, string>;
+  components?: Record<string, PlatformComponent>;
+}
+
+export async function getPlatformVersion(): Promise<PlatformVersion | null> {
+  const res = await fetch(`${API_BASE}/platform/version`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) return null;
+  return res.json();
+}

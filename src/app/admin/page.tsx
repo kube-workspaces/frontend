@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { API_BASE, Workspace } from "@/lib/api";
+import { API_BASE, PlatformComponent, Workspace } from "@/lib/api";
+import { Badge } from "@/components/ui";
 
 interface DashboardStats {
   users: { total: number; active: number; disabled: number; admins: number } | null;
@@ -15,6 +16,7 @@ interface DashboardStats {
     starting: number;
     error: number;
   } | null;
+  components: Record<string, PlatformComponent> | null;
 }
 
 function getWorkspaceStatus(ws: Workspace): "running" | "stopped" | "starting" | "error" {
@@ -33,6 +35,7 @@ export default function AdminPage() {
     authEnabled: null,
     images: null,
     workspaces: null,
+    components: null,
   });
   const [loading, setLoading] = useState(true);
 
@@ -40,7 +43,7 @@ export default function AdminPage() {
     let cancelled = false;
 
     (async () => {
-      const results: DashboardStats = { users: null, authEnabled: null, images: null, workspaces: null };
+      const results: DashboardStats = { users: null, authEnabled: null, images: null, workspaces: null, components: null };
 
       // Fetch users
       try {
@@ -88,6 +91,15 @@ export default function AdminPage() {
             starting: wsList.filter((ws) => getWorkspaceStatus(ws) === "starting").length,
             error: wsList.filter((ws) => getWorkspaceStatus(ws) === "error").length,
           };
+        }
+      } catch { /* ignore */ }
+
+      // Fetch components (version + operational status)
+      try {
+        const res = await fetch(`${API_BASE}/platform/version`, { credentials: "include" });
+        if (!cancelled && res.ok) {
+          const data = await res.json();
+          results.components = data.components ?? null;
         }
       } catch { /* ignore */ }
 
@@ -200,6 +212,23 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* Component status grid */}
+      <div>
+        <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+          Component Status
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {COMPONENT_LABELS.map(({ key, label }) => (
+            <ComponentCard
+              key={key}
+              label={label}
+              data={stats.components?.[key]}
+              loading={loading}
+            />
+          ))}
+        </div>
+      </div>
+
       {/* Info box */}
       <div className="p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded text-xs text-gray-500 dark:text-gray-400">
         <p>All configuration is stored as CRDs and can also be managed via <code className="font-mono">kubectl</code>:</p>
@@ -244,6 +273,49 @@ function StatCard({
         <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{sub}</p>
       )}
     </Link>
+  );
+}
+
+const COMPONENT_LABELS = [
+  { key: "api", label: "API" },
+  { key: "controller", label: "Controller" },
+  { key: "proxy", label: "Proxy" },
+  { key: "frontend", label: "Frontend" },
+] as const;
+
+function ComponentCard({
+  label,
+  data,
+  loading,
+}: {
+  label: string;
+  data: PlatformComponent | undefined;
+  loading: boolean;
+}) {
+  const variant =
+    data?.status === "healthy" ? "success" : data?.status === "starting" ? "warning" : "danger";
+  const statusLabel =
+    data?.status === "healthy" ? "Healthy" : data?.status === "starting" ? "Starting" : "Down";
+
+  return (
+    <div className="p-4 border border-gray-200 dark:border-gray-800 rounded-lg">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+          {label}
+        </p>
+        {data && (
+          <Badge variant={variant} dot>
+            {statusLabel}
+          </Badge>
+        )}
+      </div>
+      <p className="mt-1 text-sm font-mono text-gray-900 dark:text-white">
+        {loading ? "-" : data ? data.version : "unknown"}
+      </p>
+      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+        {loading ? "checking…" : data ? `${data.ready}/${data.total} replicas ready` : "not found"}
+      </p>
+    </div>
   );
 }
 
