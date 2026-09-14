@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import RFB from "@novnc/novnc";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, checkVNCConsoleInUse, takeOverVNCConsole } from "@/lib/api";
 
 interface VncDisplayProps {
   workspaceName: string;
@@ -23,6 +23,8 @@ export default function VncDisplay({
   const rfbRef = useRef<RFB | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [takeoverPrompt, setTakeoverPrompt] = useState(false);
+  const [takeoverBusy, setTakeoverBusy] = useState(false);
   const reconnectTimer = useRef<number | null>(null);
   const reconnectAttempt = useRef(0);
   const everConnected = useRef(false);
@@ -31,6 +33,7 @@ export default function VncDisplay({
   const pointerDownHandlerRef = useRef<(() => void) | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
+  const takeoverApproved = useRef<boolean>(false);
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -40,8 +43,21 @@ export default function VncDisplay({
     [onConnectionChange]
   );
 
-  const mountRFB = useCallback(() => {
+  const mountRFB = useCallback(async () => {
     if (disposed.current || !mountRef.current) return;
+
+    // VNC displays are single-session; check for active session before connecting.
+    let inUse = false;
+    try {
+      inUse = await checkVNCConsoleInUse(workspaceName, namespace);
+    } catch {
+      inUse = false; // fail-open: a status hiccup should not block the display
+    }
+
+    if (inUse && !takeoverApproved.current) {
+      setTakeoverPrompt(true);
+      return;
+    }
 
     if (mountRef.current.clientWidth === 0 || mountRef.current.clientHeight === 0) {
       requestAnimationFrame(() => mountRFBRef.current());
@@ -195,9 +211,31 @@ export default function VncDisplay({
     mountRFBRef.current = mountRFB;
   }, [mountRFB]);
 
+  const handleTakeover = useCallback(async () => {
+    setTakeoverBusy(true);
+    try {
+      if (!takeoverApproved.current) {
+        await takeOverVNCConsole(workspaceName, namespace);
+        takeoverApproved.current = true;
+      }
+      setTakeoverPrompt(false);
+      mountRFB();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Take over failed");
+    } finally {
+      setTakeoverBusy(false);
+    }
+  }, [workspaceName, namespace, mountRFB]);
+
+  const handleTakeoverCancel = useCallback(() => {
+    setTakeoverPrompt(false);
+    takeoverApproved.current = false;
+    setError("VNC display is in use by another session. Reconnect to retry.");
+  }, []);
+
   useEffect(() => {
     disposed.current = false;
-    mountRFB();
+    mountRFB().catch(console.error); // Errors in initial mount are not critical
     const container = mountRef.current;
     return () => {
       disposed.current = true;
@@ -228,14 +266,49 @@ export default function VncDisplay({
           Another session may hold the display (KubeVirt VNC is single-session).
         </span>
         <button
-          onClick={() => {
-            setError(null);
-            mountRFB();
+          onClick={async () => {
+            try {
+              setError(null);
+              await mountRFB();
+            } catch (err) {
+              // If mountRFB shows takeover prompt, that's expected behavior
+              console.log("Reconnect error:", err);
+            }
           }}
           className="px-3 py-1.5 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors"
         >
           Reconnect
         </button>
+      </div>
+    );
+  }
+
+  // When takeoverPrompt is true, show consent overlay; otherwise render VNC display.
+  if (takeoverPrompt) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-[#1a1b26]">
+        <div className="text-center max-w-md p-6">
+          <p className="text-yellow-400 mb-4 text-sm">
+            The VNC display is currently in use by another session. This is expected behavior — KubeVirt VNC is single-session, so only one browser can hold the display at a time.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={handleTakeover}
+              disabled={takeoverBusy}
+              className={`px-4 py-2 text-sm bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors ${
+                takeoverBusy ? "opacity-75 cursor-not-allowed" : ""
+              }`}
+            >
+              {takeoverBusy ? "Taking over…" : "Take over"}
+            </button>
+            <button
+              onClick={handleTakeoverCancel}
+              className="px-4 py-2 text-sm bg-[var(--color-secondary)] hover:bg-[var(--color-secondary-hover)] text-[var(--color-secondary-foreground)] rounded transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

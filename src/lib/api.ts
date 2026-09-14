@@ -431,6 +431,32 @@ export async function takeOverSSHConsole(
   return data.wasInUse === true;
 }
 
+export async function checkVNCConsoleInUse(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/vnc/status?namespace=${namespace}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to check VNC console");
+  const data = await res.json();
+  return data.inUse === true;
+}
+
+export async function takeOverVNCConsole(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/vnc/takeover?namespace=${namespace}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to take over VNC console");
+  const data = await res.json();
+  return data.wasInUse === true;
+}
+
 // Volume API
 export async function listVolumes(namespace: string = "_all"): Promise<Volume[]> {
   const res = await fetch(`${API_BASE}/v1/volumes?namespace=${namespace}`, {
