@@ -34,6 +34,24 @@ export default function VncDisplay({
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
   const takeoverApproved = useRef<boolean>(false);
+  const [soundOn, setSoundOn] = useState(false);
+  const soundOnRef = useRef(false);
+
+  // Audio is off by default and only enabled after an explicit user click.
+  // QEMU's VNC audio pseudo-encoding (-259) streams raw PCM in the RFB
+  // stream; noVNC plays it through WebAudio. The click matters twice:
+  //   - it is the user gesture that unlocks the AudioContext (autoplay
+  //     policy), so allow_audio() is called from inside the click;
+  //   - it toggles the actual stream capture on the server (enable_audio).
+  const toggleSound = useCallback(() => {
+    const rfb = rfbRef.current;
+    if (!rfb) return;
+    const next = !soundOnRef.current;
+    soundOnRef.current = next;
+    setSoundOn(next);
+    rfb.allow_audio();
+    rfb.enable_audio(next);
+  }, []);
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -92,6 +110,13 @@ export default function VncDisplay({
       everConnected.current = true;
       notify(true);
       rfb.focus();
+      // A reconnect creates a fresh RFB instance which starts with audio
+      // disabled; re-apply the user's sound preference. allow_audio() resumes
+      // the (already created) AudioContext from this connect event.
+      if (soundOnRef.current) {
+        rfb.allow_audio();
+        rfb.enable_audio(true);
+      }
     });
 
     const container = mountRef.current;
@@ -321,6 +346,18 @@ export default function VncDisplay({
         style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}
       />
       <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
+        <button
+          onClick={toggleSound}
+          disabled={!isConnected}
+          title={soundOn ? "Mute audio (off)" : "Enable audio (on)"}
+          className={`px-2.5 py-1 text-xs rounded transition-colors disabled:opacity-40 ${
+            soundOn
+              ? "bg-green-700/80 text-green-100 hover:bg-green-600/80"
+              : "bg-gray-800/80 text-gray-300 hover:bg-gray-700/80"
+          }`}
+        >
+          Sound: {soundOn ? "On" : "Off"}
+        </button>
         <div
           className={`w-2.5 h-2.5 rounded-full ${
             isConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"

@@ -1,0 +1,384 @@
+diff --git a/node_modules/@novnc/novnc/core/audio.js b/node_modules/@novnc/novnc/core/audio.js
+new file mode 100644
+index 0000000..6abd4f5
+--- /dev/null
++++ b/node_modules/@novnc/novnc/core/audio.js
+@@ -0,0 +1,199 @@
++/*
++ * noVNC: HTML5 VNC client
++ * Copyright (C) 2023 The noVNC authors
++ * Licensed under MPL 2.0 (see LICENSE.txt)
++ *
++ * See README.md for usage and integration instructions.
++ */
++
++// The RFB protocol (VNC) is designed for real-time user interactions
++// and allows transferring audio messages together with screen content.
++// It is not possible to use any kind of buffering, because that would
++// introduce large delays between user interaction and content display.
++//
++// This is not really a problem with screen content, because the human
++// brain is quite tolerate about slight speed changes in video content,
++// and we mostly transfer non-video data anyways.
++//
++// With audio, the situation is quite different, as it must be played
++// at a constant speed. Any delay leads to audio distortion, which is
++// unpleasant for humans.
++//
++// Without buffering, it is always possible for audio frames to arrive
++// too late or too early due to changing network speeds.
++//
++// We use the following algorithm:
++//
++// - small Jitter buffer to tolerate small speed changes (20ms)
++// - simply discard late audio frame
++// - Queue early frames with slight speedup (pitch scale) to re-sync audio
++// - if we get to many early frames, skip frames for fast re-sync
++//
++// ## Audio format
++//
++// We use/expect U16, little endian, raw audio data,
++// interleaved channel data:  [L0, R0, L1, R1, ...]
++
++import * as Log from './util/logging.js';
++
++export default class Audio {
++    constructor(sample_rate, nchannels) {
++        this._next_start = 0;
++        this._context = null;
++        this._jitter = 0.02;
++        this._resample_trigger = 5*this._jitter;
++        this._stable_time = 1.0;
++
++        // ===== PROPERTIES =====
++        this._sample_rate = sample_rate;
++        this._nchannels = nchannels;
++        this._little_endian = true;
++    }
++
++    // ===== PROPERTIES =====
++    get sample_rate() { return this._sample_rate; }
++    get nchannels() { return this._nchannels; }
++
++    // ===== PUBLIC METHODS =====
++
++    // Stop audio playback
++    //
++    // Further audio frames are simply dropped.
++    stop() {
++        this._context = null;
++        this._next_start = 0;
++    }
++
++    start() {
++        if (this._context !== null) {
++            this.resume();
++            this._next_start = 0;
++            return;
++        }
++        this._context = new AudioContext({
++            latencyHint: "interactive",
++            sampleRate: this._sample_rate,
++        });
++        this._next_start = 0;
++    }
++
++    // Resume (or lazily create) the AudioContext, so it works with browser
++    // autoplay policies which require the resume to happen inside a user
++    // gesture (see RFB.allow_audio()).
++    resume() {
++        if (this._context === null) {
++            this.start();
++            return;
++        }
++        if (this._context.state === 'suspended') {
++            this._context.resume();
++        }
++    }
++
++    play(payload) {
++        if (this._context === null) {
++            return true;
++        }
++
++        let ctime = this._context.currentTime;
++
++        let time_offset = this._next_start - ctime;
++
++        let sample_bytes = 2*this._nchannels;
++
++        if ((time_offset < this._jitter) && (this._resample_trigger !== 5*this._jitter)) {
++            Log.Debug("Stop resampling because audio is in sync (delay = " + time_offset + " sec)");
++            this._resample_trigger = 5*this._jitter;
++        }
++
++        let buffer = null;
++        if (time_offset > this._resample_trigger && (payload.length > (100*sample_bytes))) {
++            if (this._resample_trigger !== this._jitter) {
++                Log.Debug("Start resampling to re-sync audio (delay = " + time_offset + " sec)");
++                this._resample_trigger = this._jitter;
++            }
++            buffer = this._pitchScale(payload, 1.01); // increase pitch by 1%
++        } else {
++            buffer = this._createBuffer(payload);
++        }
++
++        if (this._next_start > 0) {
++            if (time_offset < -buffer.duration) {
++                Log.Warn("Skip delayed audio frame (delay = " + (-time_offset) + " sec)");
++                this._next_start = ctime + this._jitter;
++                return true; // do not play delayed frame - skip it!
++            }
++            if  (time_offset > 0.5) {
++                Log.Warn("Move fast audio frame (offset = " + time_offset + " sec)");
++                this._stable_time = 0;
++                return true; // skip frame.
++            }
++        }
++
++        this._stable_time += buffer.duration;
++
++        if (this._next_start === 0) {
++            this._next_start = ctime + this._jitter;
++        }
++
++        let start_time = this._next_start;
++        this._next_start += buffer.duration;
++
++        if (this._stable_time >= 1.0) {
++            let source = this._context.createBufferSource();
++            source.buffer = buffer;
++            source.connect(this._context.destination);
++            source.start(start_time);
++        }
++
++        return true;
++    }
++
++    // ===== PRIVATE METHODS =====
++
++    // see: https://en.wikipedia.org/wiki/Audio_time_stretching_and_pitch_scaling
++    _pitchScale(payload, factor) {
++        let sample_bytes = 2*this._nchannels;
++        let new_length = Math.ceil(payload.length/(factor*sample_bytes));
++        const payload_view = new DataView(payload);
++
++        let buffer = this._context.createBuffer(this._nchannels, new_length, this._sample_rate);
++        for (let ch = 0; ch < this._nchannels; ch++) {
++            const channel = buffer.getChannelData(ch);
++            let channel_offset = ch*2;
++            for (let i = 0; i < buffer.length; i++) {
++                let pos_float = i*factor;
++                let j = Math.trunc(pos_float);
++                let second_weight = pos_float % 1;
++                let first_weight = 1 - second_weight;
++                let p = j*sample_bytes + channel_offset;
++                let value0 = payload_view.getUint16(p, this._little_endian);
++                p += sample_bytes;
++                let value1 = value0;
++                if (p < payload.length) {
++                    value1 = payload_view.getUint16(p, this._little_endian);
++                }
++                let value = (value0*first_weight + value1*second_weight);
++                channel[i] = (value - 32768) / 32768.0;
++            }
++        }
++        return buffer;
++    }
++
++    _createBuffer(payload) {
++        let sample_bytes = 2*this._nchannels;
++        let buffer = this._context.createBuffer(
++            this._nchannels, payload.length/sample_bytes, this._sample_rate);
++
++        for (let ch = 0; ch < this._nchannels; ch++) {
++            const channel = buffer.getChannelData(ch);
++            let channel_offset = ch*2;
++            for (let i = 0; i < buffer.length; i++) {
++                let p = i*sample_bytes + channel_offset;
++                let value = payload[p] + payload[p+1]*256;
++                channel[i] = (value / 32768.0) - 1.0;
++            }
++        }
++        return buffer;
++    }
++}
+\ No newline at end of file
+diff --git a/node_modules/@novnc/novnc/core/encodings.js b/node_modules/@novnc/novnc/core/encodings.js
+index 7afcb17..a69b431 100644
+--- a/node_modules/@novnc/novnc/core/encodings.js
++++ b/node_modules/@novnc/novnc/core/encodings.js
+@@ -24,6 +24,7 @@ export const encodings = {
+     pseudoEncodingLastRect: -224,
+     pseudoEncodingCursor: -239,
+     pseudoEncodingQEMUExtendedKeyEvent: -258,
++    pseudoEncodingQEMUAudioEvent: -259,
+     pseudoEncodingQEMULedEvent: -261,
+     pseudoEncodingDesktopName: -307,
+     pseudoEncodingExtendedDesktopSize: -308,
+diff --git a/node_modules/@novnc/novnc/core/rfb.js b/node_modules/@novnc/novnc/core/rfb.js
+index 80011e4..eb40cd8 100644
+--- a/node_modules/@novnc/novnc/core/rfb.js
++++ b/node_modules/@novnc/novnc/core/rfb.js
+@@ -14,6 +14,7 @@ import { dragThreshold, supportsWebCodecsH264Decode } from './util/browser.js';
+ import { clientToElement } from './util/element.js';
+ import { setCapture } from './util/events.js';
+ import EventTargetMixin from './util/eventtarget.js';
++import Audio from "./audio.js";
+ import Display from "./display.js";
+ import Inflator from "./inflator.js";
+ import Deflator from "./deflator.js";
+@@ -154,6 +155,11 @@ export default class RFB extends EventTargetMixin {
+ 
+         this._qemuExtKeyEventSupported = false;
+ 
++        this._qemuAudioSupported = false;
++        this._page_had_user_interaction = false;
++        this._audio_enable = false;
++        this._audio = new Audio(44100, 2);
++
+         this._extendedPointerEventSupported = false;
+ 
+         this._clipboardText = null;
+@@ -2252,6 +2258,7 @@ export default class RFB extends EventTargetMixin {
+         encs.push(encodings.pseudoEncodingDesktopSize);
+         encs.push(encodings.pseudoEncodingLastRect);
+         encs.push(encodings.pseudoEncodingQEMUExtendedKeyEvent);
++        encs.push(encodings.pseudoEncodingQEMUAudioEvent);
+         encs.push(encodings.pseudoEncodingQEMULedEvent);
+         encs.push(encodings.pseudoEncodingExtendedDesktopSize);
+         encs.push(encodings.pseudoEncodingXvp);
+@@ -2607,6 +2614,9 @@ export default class RFB extends EventTargetMixin {
+             case 250:  // XVP
+                 return this._handleXvpMsg();
+ 
++            case 255: // Qemu Server Message
++                return this._handleQemuAudioEvent();
++
+             default:
+                 this._fail("Unexpected server message (type " + msgType + ")");
+                 Log.Debug("sock.rQpeekBytes(30): " + this._sock.rQpeekBytes(30));
+@@ -2679,6 +2689,13 @@ export default class RFB extends EventTargetMixin {
+                 this._qemuExtKeyEventSupported = true;
+                 return true;
+ 
++            case encodings.pseudoEncodingQEMUAudioEvent:
++                if (!this._qemuAudioSupported) {
++                    RFB.messages.enableQemuAudioUpdates(this._sock, this._audio.nchannels, this._audio.sample_rate);
++                    this._qemuAudioSupported = true;
++                }
++                return true;
++
+             case encodings.pseudoEncodingDesktopName:
+                 return this._handleDesktopName();
+ 
+@@ -2701,6 +2718,76 @@ export default class RFB extends EventTargetMixin {
+         }
+     }
+ 
++    _handleQemuAudioEvent() {
++        if (this._sock.rQwait("Qemu Audio Event", 3, 1)) {
++            return false;
++        }
++
++        const submsg = this._sock.rQshift8();
++        if (submsg !== 1) {
++            Log.Warn("The given qemu message type " + submsg + " is not supported.");
++            return false;
++        }
++
++        const operation = this._sock.rQshift16();
++
++        switch (operation) {
++            case 0: {
++                this._audio.stop();
++                return true;
++            }
++            case 1: {
++                this._audio.start();
++                return true;
++            }
++            case 2: break;
++            default: {
++                Log.Warn("The given qemu audio operation " + operation + " is not supported.");
++                return false;
++            }
++        }
++
++        if (this._sock.rQwait("Qemu Audio payload length", 4, 4)) {
++            return false;
++        }
++
++        const length = this._sock.rQshift32();
++
++        if (length === 0) {
++            return true;
++        }
++
++        if (this._sock.rQwait("audio payload", length, 8)) {
++            return false;
++        }
++
++        let payload = this._sock.rQshiftBytes(length, false);
++
++        if (!this._page_had_user_interaction || !this._audio_enable) {
++            return true;
++        }
++
++        return this._audio.play(payload);
++    }
++
++    enable_audio(value) {
++        if (this._audio_enable !== value) {
++            this._audio_enable = value;
++            if (this._qemuAudioSupported) {
++                if (this._audio_enable) {
++                    RFB.messages.enableQemuAudioUpdates(this._sock, this._audio.nchannels, this._audio.sample_rate);
++                } else {
++                    RFB.messages.disableQemuAudioUpdates(this._sock);
++                }
++            }
++        }
++    }
++
++    allow_audio() {
++        this._page_had_user_interaction = true;
++        this._audio.resume();
++    }
++
+     _handleVMwareCursor() {
+         const hotx = this._FBU.x;  // hotspot-x
+         const hoty = this._FBU.y;  // hotspot-y
+@@ -3387,7 +3474,31 @@ RFB.messages = {
+         sock.sQpush8(op);
+ 
+         sock.flush();
+-    }
++    },
++
++    disableQemuAudioUpdates(sock, nchannels, sample_rate) {
++        sock.sQpush8(255); // msg-type
++        sock.sQpush8(1); // submessage-type
++        sock.sQpush16(1); // disable audio
++
++        sock.flush();
++    },
++
++    enableQemuAudioUpdates(sock, nchannels, sample_rate) {
++
++        sock.sQpush8(255); // msg-type
++        sock.sQpush8(1); // submessage-type
++        sock.sQpush16(2); // set sample format
++        sock.sQpush8(2); // format U16
++        sock.sQpush8(nchannels);
++        sock.sQpush32(sample_rate); // audio frequency
++
++        sock.sQpush8(255); // msg-type
++        sock.sQpush8(1); // submessage-type
++        sock.sQpush16(0); // enable audio
++
++        sock.flush();
++    },
+ };
+ 
+ RFB.cursors = {

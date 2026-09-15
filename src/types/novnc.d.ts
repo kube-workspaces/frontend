@@ -75,6 +75,13 @@ declare module "@novnc/novnc" {
     };
     ondisconnect: ((detail: { clean: boolean; reason?: string }) => void) | null;
     toDataURL(type?: string, encoderOptions?: number): string;
+    // QEMU VNC audio pseudo-encoding (-259) support (patched into noVNC
+    // 1.7.0 via patch-package):
+    //   enable_audio(true/false) toggles capture; it must be preceded by a
+    //   user-gesture call to allow_audio() so the WebAudio context can play
+    //   (autoplay policies).
+    allow_audio(): void;
+    enable_audio(value: boolean): void;
   }
 
   export default RFB;
