@@ -23,6 +23,7 @@ import {
   listImages,
   listVolumes,
   getWorkspaceMetrics,
+  getImageCR,
   Workspace,
   WorkspaceEvent,
   WorkspaceImage,
@@ -58,7 +59,8 @@ export default function WorkspaceDetailPage() {
   const [crData, setCrData] = useState<object | null>(null);
   const [vmData, setVmData] = useState<Record<string, unknown> | null>(null);
   const [vmiData, setVmiData] = useState<Record<string, unknown> | null>(null);
-  const [yamlView, setYamlView] = useState<"workspace" | "pod" | "vm" | "vmi" | "userdata">("workspace");
+  const [imageData, setImageData] = useState<object | null>(null);
+  const [yamlView, setYamlView] = useState<"workspace" | "pod" | "vm" | "vmi" | "userdata" | "image">("workspace");
   const [cleanYaml, setCleanYaml] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +161,11 @@ export default function WorkspaceDetailPage() {
       setVmData(null);
       setVmiData(null);
     }
-  }, [name, namespace, workspace?.type]);
+
+    // Fetch the Image CR for this workspace's image (cluster-scoped)
+    const img = images.find((i) => i.image === workspace?.image);
+    setImageData(img?.cr_name ? await getImageCR(img.cr_name).catch(() => null) : null);
+  }, [name, namespace, workspace?.type, images, workspace?.image]);
 
   const fetchMetrics = useCallback(async () => {
     try {
@@ -641,6 +647,7 @@ Edit
             podData={podData}
             vmData={vmData}
             vmiData={vmiData}
+            imageData={imageData}
             namespace={namespace}
             isVM={workspace?.type === "vm"}
             yamlView={yamlView}
@@ -1540,6 +1547,7 @@ function YamlTab({
   podData,
   vmData,
   vmiData,
+  imageData,
   namespace,
   isVM,
   yamlView,
@@ -1552,10 +1560,11 @@ function YamlTab({
   podData: PodInfo | null;
   vmData: Record<string, unknown> | null;
   vmiData: Record<string, unknown> | null;
+  imageData: object | null;
   namespace: string;
   isVM: boolean;
-  yamlView: "workspace" | "pod" | "vm" | "vmi" | "userdata";
-  setYamlView: (v: "workspace" | "pod" | "vm" | "vmi" | "userdata") => void;
+  yamlView: "workspace" | "pod" | "vm" | "vmi" | "userdata" | "image";
+  setYamlView: (v: "workspace" | "pod" | "vm" | "vmi" | "userdata" | "image") => void;
   cleanYaml: boolean;
   setCleanYaml: (v: boolean) => void;
   onRefresh: () => void;
@@ -1577,7 +1586,7 @@ function YamlTab({
   }, [yamlView, vmData, namespace]);
 
   const data =
-    yamlView === "workspace" ? crData : yamlView === "pod" ? podData : yamlView === "vm" ? vmData : vmiData;
+    yamlView === "workspace" ? crData : yamlView === "pod" ? podData : yamlView === "vm" ? vmData : yamlView === "image" ? imageData : vmiData;
   let content: string;
 
   if (yamlView === "userdata") {
@@ -1590,7 +1599,9 @@ function YamlTab({
           ? "VirtualMachine not found"
           : yamlView === "vmi"
             ? "VirtualMachineInstance not found (VirtualMachine may be stopped)"
-            : "No data available";
+            : yamlView === "image"
+              ? "Image CR not found (image may not be backed by an Image CR)"
+              : "No data available";
   } else {
     const obj = cleanYaml ? cleanObject(data as Record<string, unknown>) : data;
     content = yamlStringify(obj, { lineWidth: 120 });
@@ -1654,6 +1665,16 @@ function YamlTab({
               </button>
             </>
           )}
+          <button
+            onClick={() => setYamlView("image")}
+            className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+              yamlView === "image"
+                ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
+                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            }`}
+          >
+            Image CR
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
