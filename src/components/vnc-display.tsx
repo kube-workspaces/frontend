@@ -3,11 +3,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import RFB from "@novnc/novnc";
 import { API_BASE, checkVNCConsoleInUse, takeOverVNCConsole } from "@/lib/api";
+import { useAdaptiveQualityController, applyQualitySettings, requestLosslessRefresh } from "@/lib/adaptive-quality-controller";
+
+// AQC debug flag (can be toggled via environment or settings)
+const AQC_DEBUG = process.env.NEXT_PUBLIC_AQC_DEBUG === "true";
 
 interface VncDisplayProps {
   workspaceName: string;
   namespace: string;
   onConnectionChange?: (connected: boolean) => void;
+}
+
+// AQC state tracking for quality adaptation
+interface AqcContext {
+  metrics: any;
+  motionState: any;
+  networkTierIndex: number;
+  applyQualitySettings: typeof applyQualitySettings;
+  requestLosslessRefresh: typeof requestLosslessRefresh;
+  debugInfo: any;
 }
 
 // A noVNC RFB view over the API's /v1/workspaces/{name}/vnc WebSocket bridge.
@@ -61,6 +75,54 @@ export default function VncDisplay({
     [onConnectionChange]
   );
 
+  // Adaptive Quality Controller integration - Phase 2 feature
+  const aqcContextRef = useRef<AqcContext>({
+    metrics: null,
+    motionState: "Idle",
+    networkTierIndex: 2,
+    applyQualitySettings,
+    requestLosslessRefresh,
+    debugInfo: { metricsHistory: [], stateTransitions: [] },
+  });
+
+  // Use the adaptive quality controller hook for real-time adaptation
+  const aqc = useAdaptiveQualityController();
+  const totalBytesRef = useRef(0);
+
+  useEffect(() => {
+    const rfb = rfbRef.current;
+    if (!rfb || !isConnected) return;
+
+    // Expose RFB and byte counter to AQC
+    (window as any).__aqc_rfb = rfb;
+    (window as any).__aqc_total_bytes = totalBytesRef.current;
+
+    // Hook the underlying WebSocket for byte counting
+    const ws = (rfb as any)._websocket;
+    if (ws && ws._websocket && !(ws._websocket as any).__aqc_hooked) {
+      const realWs = ws._websocket;
+      realWs.__aqc_hooked = true;
+      (window as any).__aqc_vnc_ws = realWs;
+
+      const originalOnMessage = realWs.onmessage;
+      realWs.onmessage = (event: MessageEvent) => {
+        if (event.data instanceof ArrayBuffer) {
+          totalBytesRef.current += event.data.byteLength;
+          (window as any).__aqc_total_bytes = totalBytesRef.current;
+          
+          // Track last message time for RTT/activity
+          (window as any).__aqc_last_msg_at = performance.now();
+        }
+        if (originalOnMessage) originalOnMessage.call(realWs, event);
+      };
+    }
+
+    if (AQC_DEBUG) {
+      console.log("[AQC] Controller Active. Motion:", aqc.motionState, "Tier:", aqc.networkTierIndex);
+    }
+  }, [isConnected, aqc.motionState, aqc.networkTierIndex]);
+
+
   const mountRFB = useCallback(async () => {
     if (disposed.current || !mountRef.current) return;
 
@@ -102,6 +164,11 @@ export default function VncDisplay({
     rfb.resizeSession = true;
     rfb.clipViewport = false;
     rfb.viewOnly = false;
+    
+    // Apply initial quality settings based on network assessment (Phase C)
+    const initialTierIndex = aqc.networkTierIndex ?? 2;
+    applyQualitySettings(initialTierIndex, 88, 2);
+
     rfbRef.current = rfb;
 
     rfb.addEventListener("connect", () => {
@@ -118,7 +185,6 @@ export default function VncDisplay({
         rfb.enable_audio(true);
       }
     });
-
     const container = mountRef.current;
     const handlePointerEvent = (e: PointerEvent) => {
       if (!rfbRef.current || !mountRef.current) return;
@@ -211,6 +277,10 @@ export default function VncDisplay({
       );
       notify(false);
       if (disposed.current) return;
+      
+      // Request lossless refresh before disconnecting to ensure clean shutdown state (Phase D)
+      requestLosslessRefresh().catch(console.error);
+
       // Only auto-reconnect sessions that actually established once. A connect
       // that never opened (e.g. another session holds the display, the VM is
       // stopped) shows the error state instead of churning.
@@ -366,6 +436,13 @@ export default function VncDisplay({
         <span className={`text-xs ${isConnected ? "text-gray-400" : "text-gray-600"}`}>
           {isConnected ? "Display connected" : "Connecting…"}
         </span>
+        
+        {/* AQC Debug Indicator - shows current quality tier */}
+        {AQC_DEBUG && isConnected && (
+          <div className="ml-2 px-2 py-1 bg-blue-900/70 rounded text-xs text-blue-100">
+            Tier: {aqc.networkTierIndex ?? 2}
+          </div>
+        )}
       </div>
     </div>
   );
