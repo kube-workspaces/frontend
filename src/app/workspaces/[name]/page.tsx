@@ -641,6 +641,7 @@ Edit
             podData={podData}
             vmData={vmData}
             vmiData={vmiData}
+            namespace={namespace}
             isVM={workspace?.type === "vm"}
             yamlView={yamlView}
             setYamlView={setYamlView}
@@ -1483,11 +1484,20 @@ function cleanObject(obj: Record<string, unknown>): Record<string, unknown> {
   return cleaned;
 }
 
-// extractCloudInitUserData pulls the NoCloud user-data out of a VirtualMachine
-// object's spec.template.spec.volumes (cloudInitNoCloud.userData). KubeVirt
-// stores this as plaintext (userDataBase64 is the encoded variant). Returns a
-// friendly message when the VM is missing or has no cloud-init datasource.
-function extractCloudInitUserData(vm: Record<string, unknown> | null): string {
+const NO_CLOUD_INIT_MESSAGE =
+  "# No cloud-init user-data\n# This workspace has no seeded cloud-init datasource.";
+
+// resolveCloudInitUserData returns the cloud-init user-data a VirtualMachine
+// actually consumes, whether it is inlined in the NoCloud datasource
+// (cloudInitNoCloud.userData) or served from a Secret
+// (cloudInitNoCloud.secretRef, which KubeVirt uses for user-data beyond its
+// 2048-byte inline limit). The Secret's "userdata" key holds the
+// base64-encoded text. Returns a friendly message when the VM is missing or has
+// no cloud-init datasource.
+async function resolveCloudInitUserData(
+  vm: Record<string, unknown> | null,
+  namespace: string
+): Promise<string> {
   if (!vm) {
     return "VirtualMachine not found";
   }
@@ -1500,11 +1510,29 @@ function extractCloudInitUserData(vm: Record<string, unknown> | null): string {
   for (const vol of volumes ?? []) {
     const v = vol as Record<string, unknown>;
     const ci = v.cloudInitNoCloud as Record<string, unknown> | undefined;
-    if (ci && typeof ci.userData === "string") {
+    if (!ci) continue;
+    if (typeof ci.userData === "string") {
       return ci.userData as string;
     }
+    const ref = ci.secretRef as { name?: unknown } | undefined;
+    const secretName = ref && typeof ref.name === "string" ? ref.name : "";
+    if (secretName) {
+      try {
+        const secrets = await listCRDInstances("core", "v1", "secrets", namespace);
+        const secret = secrets.find(
+          (s) => (s.metadata as { name?: string } | undefined)?.name === secretName
+        );
+        const data = secret?.data as Record<string, unknown> | undefined;
+        const encoded = typeof data?.userdata === "string" ? data.userdata : "";
+        if (encoded) {
+          return atob(encoded);
+        }
+      } catch {
+        return `VirtualMachine references Secret "${secretName}" but it could not be read.`;
+      }
+    }
   }
-  return "# No cloud-init user-data\n# This workspace has no seeded cloud-init datasource.";
+  return NO_CLOUD_INIT_MESSAGE;
 }
 
 function YamlTab({
@@ -1512,6 +1540,7 @@ function YamlTab({
   podData,
   vmData,
   vmiData,
+  namespace,
   isVM,
   yamlView,
   setYamlView,
@@ -1523,6 +1552,7 @@ function YamlTab({
   podData: PodInfo | null;
   vmData: Record<string, unknown> | null;
   vmiData: Record<string, unknown> | null;
+  namespace: string;
   isVM: boolean;
   yamlView: "workspace" | "pod" | "vm" | "vmi" | "userdata";
   setYamlView: (v: "workspace" | "pod" | "vm" | "vmi" | "userdata") => void;
@@ -1530,12 +1560,28 @@ function YamlTab({
   setCleanYaml: (v: boolean) => void;
   onRefresh: () => void;
 }) {
+  const [userdata, setUserdata] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (yamlView === "userdata") {
+      resolveCloudInitUserData(vmData as Record<string, unknown> | null, namespace).then(
+        (s) => {
+          if (!cancelled) setUserdata(s);
+        }
+      );
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [yamlView, vmData, namespace]);
+
   const data =
     yamlView === "workspace" ? crData : yamlView === "pod" ? podData : yamlView === "vm" ? vmData : vmiData;
   let content: string;
 
   if (yamlView === "userdata") {
-    content = extractCloudInitUserData(vmData as Record<string, unknown> | null);
+    content = userdata;
   } else if (!data) {
     content =
       yamlView === "pod"
