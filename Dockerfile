@@ -3,8 +3,10 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 # patches/ must be present when `npm ci` runs: its postinstall invokes
 # patch-package, which applies patches/@novnc+novnc+1.7.0.patch to noVNC.
-# (It ships in the repo, but COPY comes after npm ci in CI otherwise.)
-COPY package.json package-lock.json patches/ ./
+# (COPY . comes after npm ci in CI otherwise.) COPY a directory's contents,
+# not the dir itself, so copy into an explicit ./patches/ destination.
+COPY package.json package-lock.json ./
+COPY patches/ ./patches/
 RUN npm ci
 
 COPY . .
