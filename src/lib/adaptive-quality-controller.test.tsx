@@ -9,8 +9,6 @@ import { describe, it, expect } from "@jest/globals";
 import {
   NETWORK_TIERS,
   BASELINE_MOTION_THRESHOLDS,
-  useAdaptiveQualityController,
-  assessNetworkTier,
   applyHysteresis,
 } from "./adaptive-quality-controller";
 
@@ -98,7 +96,6 @@ describe("Adaptive Quality Controller", () => {
 
     it("should verify idle detection thresholds", () => {
       const MIN_IDLE_DURATION = 500; // 500ms as per spec
-      const MOTION_THRESHOLD = BASELINE_MOTION_THRESHOLDS.minActiveIntensity / 2;
 
       expect(MIN_IDLE_DURATION).toBe(500); // Matches spec ✓
     });

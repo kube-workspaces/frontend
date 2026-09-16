@@ -14,16 +14,6 @@ interface VncDisplayProps {
   onConnectionChange?: (connected: boolean) => void;
 }
 
-// AQC state tracking for quality adaptation
-interface AqcContext {
-  metrics: any;
-  motionState: any;
-  networkTierIndex: number;
-  applyQualitySettings: typeof applyQualitySettings;
-  requestLosslessRefresh: typeof requestLosslessRefresh;
-  debugInfo: any;
-}
-
 // A noVNC RFB view over the API's /v1/workspaces/{name}/vnc WebSocket bridge.
 // The bridge speaks the raw RFB byte stream, so the browser client connects
 // directly — no websockify hop required. The VMI VNC console is single-session;
@@ -75,16 +65,6 @@ export default function VncDisplay({
     [onConnectionChange]
   );
 
-  // Adaptive Quality Controller integration - Phase 2 feature
-  const aqcContextRef = useRef<AqcContext>({
-    metrics: null,
-    motionState: "Idle",
-    networkTierIndex: 2,
-    applyQualitySettings,
-    requestLosslessRefresh,
-    debugInfo: { metricsHistory: [], stateTransitions: [] },
-  });
-
   // Use the adaptive quality controller hook for real-time adaptation
   const aqc = useAdaptiveQualityController();
   const totalBytesRef = useRef(0);
@@ -94,23 +74,30 @@ export default function VncDisplay({
     if (!rfb || !isConnected) return;
 
     // Expose RFB and byte counter to AQC
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__aqc_rfb = rfb;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__aqc_total_bytes = totalBytesRef.current;
 
     // Hook the underlying WebSocket for byte counting
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ws = (rfb as any)._websocket;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (ws && ws._websocket && !(ws._websocket as any).__aqc_hooked) {
       const realWs = ws._websocket;
       realWs.__aqc_hooked = true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).__aqc_vnc_ws = realWs;
 
       const originalOnMessage = realWs.onmessage;
       realWs.onmessage = (event: MessageEvent) => {
         if (event.data instanceof ArrayBuffer) {
           totalBytesRef.current += event.data.byteLength;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (window as any).__aqc_total_bytes = totalBytesRef.current;
           
           // Track last message time for RTT/activity
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (window as any).__aqc_last_msg_at = performance.now();
         }
         if (originalOnMessage) originalOnMessage.call(realWs, event);
@@ -300,7 +287,7 @@ export default function VncDisplay({
     rfb.addEventListener("desktopname", () => {
       setError(null);
     });
-  }, [workspaceName, namespace, notify]);
+  }, [workspaceName, namespace, notify, aqc.networkTierIndex]);
 
   useEffect(() => {
     mountRFBRef.current = mountRFB;

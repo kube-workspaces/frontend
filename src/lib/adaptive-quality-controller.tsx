@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Adaptive Quality Controller (AQC) - Phase 2 Implementation
@@ -88,7 +88,7 @@ export function useAdaptiveQualityController(): {
   const rttSamples = useRef<number[]>([]);
   const throughputSamples = useRef<number[]>([]);
   const lastTotalBytes = useRef<number>(0);
-  const lastMeasureTime = useRef<number>(performance.now());
+  const lastMeasureTime = useRef<number>(0);
   
   const [metrics, setMetrics] = useState<NetworkMetrics>({
     rttMs: 50,
@@ -103,8 +103,13 @@ export function useAdaptiveQualityController(): {
   const lastUpgradeAt = useRef<number>(0);
 
   useEffect(() => {
+    lastMeasureTime.current = performance.now();
+  }, []);
+
+  useEffect(() => {
     // RTT Measurement: Send a 1x1 incremental FramebufferUpdateRequest
     const measureRtt = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ws = (window as any).__aqc_vnc_ws;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
@@ -124,6 +129,7 @@ export function useAdaptiveQualityController(): {
       // the next message is likely the response (or already in flight).
       // This is a coarse but real measurement of the round trip.
       const checkResponse = () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const lastMsgAt = (window as any).__aqc_last_msg_at || 0;
         if (lastMsgAt > sentAt) {
           const rtt = lastMsgAt - sentAt;
@@ -138,6 +144,7 @@ export function useAdaptiveQualityController(): {
 
     const measureThroughput = () => {
       const now = performance.now();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const totalBytes = (window as any).__aqc_total_bytes || 0;
       const deltaBytes = totalBytes - lastTotalBytes.current;
       const deltaTime = (now - lastMeasureTime.current) / 1000;
@@ -254,6 +261,7 @@ export async function applyQualitySettings(
   jpegQuality: number,
   compressionLevel: number
 ): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rfb = (window as any).__aqc_rfb;
   if (!rfb) return;
 
@@ -265,6 +273,7 @@ export async function applyQualitySettings(
 }
 
 export async function requestLosslessRefresh(): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rfb = (window as any).__aqc_rfb;
   if (!rfb) return;
 
@@ -274,6 +283,7 @@ export async function requestLosslessRefresh(): Promise<void> {
   rfb.qualityLevel = 9; // Max quality in noVNC (0-9)
   
   // Request full update
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ws = (rfb as any)._websocket;
   if (ws && ws._websocket && ws._websocket.readyState === WebSocket.OPEN) {
     const msg = new Uint8Array(10);
@@ -285,6 +295,7 @@ export async function requestLosslessRefresh(): Promise<void> {
 
   // Revert quality after a short delay (enough to receive the frame)
   setTimeout(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const currentRfb = (window as any).__aqc_rfb;
     if (currentRfb) currentRfb.qualityLevel = oldQuality;
   }, 500);
