@@ -165,6 +165,20 @@ export default function TerminalModal({
                 Display
               </button>
             )}
+            {isVM && (
+              <button
+                onClick={() =>
+                  window.open(
+                    `/workspaces/${workspaceName}/display?namespace=${namespace}`,
+                    "_blank"
+                  )
+                }
+                className="px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] hover:bg-gray-700 rounded transition-colors"
+                title="Open shared display (multiple viewers, one controller)"
+              >
+                Shared display
+              </button>
+            )}
             {isVM && mode === "display" && (
               <button
                 onClick={() => setMode("serial")}

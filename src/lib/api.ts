@@ -457,6 +457,156 @@ export async function takeOverVNCConsole(
   return data.wasInUse === true;
 }
 
+// Shared display session API (/v1/workspaces/{name}/display*). A viewer joins
+// via POST join (getting its participant id), attachs its stream to the API's
+// /display/ws WebSocket with ?participant=<id>&role=observer, and drives
+// control transitions (acquire/release/transfer) with that same id.
+export interface DisplayParticipant {
+  id: string;
+  role: "observer" | "controller";
+  connected: boolean;
+  joined_at: string;
+}
+
+export interface DisplayCapability {
+  enabled: boolean;
+  protocol: number;
+  transports?: string[];
+  max_participants?: number;
+  max_width?: number;
+  max_height?: number;
+  handshake_timeout_ms?: number;
+  participant_ttl_ms?: number;
+  participants?: number;
+  controller_present?: boolean;
+}
+
+export interface DisplayStatus {
+  enabled: boolean;
+  protocol: number;
+  epoch: string;
+  controller?: DisplayParticipant | null;
+  observers: DisplayParticipant[];
+  participants: number;
+}
+
+export interface DisplayJoinResult {
+  participant: DisplayParticipant;
+  capability: DisplayCapability;
+}
+
+export interface DisplayControlResult {
+  controller?: DisplayParticipant | null;
+  was_held: boolean;
+  released: boolean;
+}
+
+export async function getDisplayCapability(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<DisplayCapability> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/display?namespace=${namespace}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to check display capability");
+  return res.json();
+}
+
+export async function getDisplayStatus(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<DisplayStatus> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/display/status?namespace=${namespace}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to read display session");
+  return res.json();
+}
+
+export async function joinDisplay(
+  name: string,
+  namespace: string,
+  role: "observer" | "controller" = "observer"
+): Promise<DisplayJoinResult> {
+  const res = await fetch(
+    `${API_BASE}/v1/workspaces/${name}/display/join?namespace=${encodeURIComponent(namespace)}&role=${role}`,
+    {
+      method: "POST",
+      credentials: "include",
+    }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to join display session");
+  return res.json();
+}
+
+export async function leaveDisplay(
+  name: string,
+  namespace: string,
+  participantId: string
+): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/v1/workspaces/${name}/display/sessions/${encodeURIComponent(participantId)}?namespace=${encodeURIComponent(namespace)}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to leave display session");
+  return res.json();
+}
+
+export async function acquireDisplayControl(
+  name: string,
+  namespace: string,
+  participantId: string,
+  force: boolean = false
+): Promise<DisplayControlResult> {
+  const res = await fetch(
+    `${API_BASE}/v1/workspaces/${name}/display/control/acquire?namespace=${encodeURIComponent(namespace)}&participant_id=${encodeURIComponent(participantId)}&force=${force}`,
+    {
+      method: "POST",
+      credentials: "include",
+    }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to acquire display control");
+  return res.json();
+}
+
+export async function releaseDisplayControl(
+  name: string,
+  namespace: string,
+  participantId: string
+): Promise<DisplayControlResult> {
+  const res = await fetch(
+    `${API_BASE}/v1/workspaces/${name}/display/control/release?namespace=${encodeURIComponent(namespace)}&participant_id=${encodeURIComponent(participantId)}`,
+    {
+      method: "POST",
+      credentials: "include",
+    }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to release display control");
+  return res.json();
+}
+
+export async function transferDisplayControl(
+  name: string,
+  namespace: string,
+  participantId: string,
+  to: string
+): Promise<DisplayControlResult> {
+  const res = await fetch(
+    `${API_BASE}/v1/workspaces/${name}/display/control/transfer?namespace=${encodeURIComponent(namespace)}&participant_id=${encodeURIComponent(participantId)}&to=${encodeURIComponent(to)}`,
+    {
+      method: "POST",
+      credentials: "include",
+    }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to transfer display control");
+  return res.json();
+}
+
 // Volume API
 export async function listVolumes(namespace: string = "_all"): Promise<Volume[]> {
   const res = await fetch(`${API_BASE}/v1/volumes?namespace=${namespace}`, {
