@@ -530,11 +530,14 @@ export async function joinDisplay(
   namespace: string,
   role: "observer" | "controller" = "observer"
 ): Promise<DisplayJoinResult> {
+  // Goa maps only `namespace` to the query string; role travels in the body.
   const res = await fetch(
-    `${API_BASE}/v1/workspaces/${name}/display/join?namespace=${encodeURIComponent(namespace)}&role=${role}`,
+    `${API_BASE}/v1/workspaces/${name}/display/join?namespace=${encodeURIComponent(namespace)}`,
     {
       method: "POST",
       credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
     }
   );
   if (!res.ok) throw await apiError(res, "Failed to join display session");
@@ -564,10 +567,12 @@ export async function acquireDisplayControl(
   force: boolean = false
 ): Promise<DisplayControlResult> {
   const res = await fetch(
-    `${API_BASE}/v1/workspaces/${name}/display/control/acquire?namespace=${encodeURIComponent(namespace)}&participant_id=${encodeURIComponent(participantId)}&force=${force}`,
+    `${API_BASE}/v1/workspaces/${name}/display/control/acquire?namespace=${encodeURIComponent(namespace)}`,
     {
       method: "POST",
       credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ participant_id: participantId, force }),
     }
   );
   if (!res.ok) throw await apiError(res, "Failed to acquire display control");
@@ -580,10 +585,12 @@ export async function releaseDisplayControl(
   participantId: string
 ): Promise<DisplayControlResult> {
   const res = await fetch(
-    `${API_BASE}/v1/workspaces/${name}/display/control/release?namespace=${encodeURIComponent(namespace)}&participant_id=${encodeURIComponent(participantId)}`,
+    `${API_BASE}/v1/workspaces/${name}/display/control/release?namespace=${encodeURIComponent(namespace)}`,
     {
       method: "POST",
       credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ participant_id: participantId }),
     }
   );
   if (!res.ok) throw await apiError(res, "Failed to release display control");
@@ -597,10 +604,12 @@ export async function transferDisplayControl(
   to: string
 ): Promise<DisplayControlResult> {
   const res = await fetch(
-    `${API_BASE}/v1/workspaces/${name}/display/control/transfer?namespace=${encodeURIComponent(namespace)}&participant_id=${encodeURIComponent(participantId)}&to=${encodeURIComponent(to)}`,
+    `${API_BASE}/v1/workspaces/${name}/display/control/transfer?namespace=${encodeURIComponent(namespace)}`,
     {
       method: "POST",
       credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ participant_id: participantId, to, force: false }),
     }
   );
   if (!res.ok) throw await apiError(res, "Failed to transfer display control");
