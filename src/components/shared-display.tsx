@@ -9,6 +9,7 @@ import {
   acquireDisplayControl,
   releaseDisplayControl,
   getDisplayStatus,
+  getDisplayCapability,
   type DisplayStatus,
 } from "@/lib/api";
 
@@ -300,6 +301,15 @@ export default function SharedDisplay({
       if (cancelled) return;
       if (joinedRef.current) return;
       try {
+        // The shared display ships opt-in: while the platform gate is off the
+        // capability says so and joining is refused — show that rather than
+        // the POST's error.
+        const cap = await getDisplayCapability(workspaceName, namespace);
+        if (cancelled) return;
+        if (!cap.enabled) {
+          setError("Shared display sessions are not enabled on this platform");
+          return;
+        }
         const result = await joinDisplay(workspaceName, namespace, "observer");
         if (cancelled) return;
         joinedRef.current = true;

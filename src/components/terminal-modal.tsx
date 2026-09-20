@@ -6,6 +6,7 @@ import { useSerialConsole } from "@/lib/use-serial-console";
 import { useSSHConsole } from "@/lib/use-ssh-console";
 import VncDisplay from "@/components/vnc-display";
 import SSHCredentialForm from "@/components/ssh-credential-form";
+import { getDisplayCapability } from "@/lib/api";
 
 interface TerminalModalProps {
   workspaceName: string;
@@ -59,6 +60,24 @@ export default function TerminalModal({
   });
 
   const { connect, dispose } = serial;
+
+  // The shared display ships opt-in: its entry point only appears when the
+  // platform advertises the capability.
+  const [displayCapable, setDisplayCapable] = useState(false);
+  useEffect(() => {
+    if (!isVM) return;
+    let cancelled = false;
+    getDisplayCapability(workspaceName, namespace)
+      .then((cap) => {
+        if (!cancelled) setDisplayCapable(cap.enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setDisplayCapable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isVM, workspaceName, namespace]);
 
   useEffect(() => {
     if (mode !== "serial") return;
@@ -165,7 +184,7 @@ export default function TerminalModal({
                 Display
               </button>
             )}
-            {isVM && (
+            {isVM && displayCapable && (
               <button
                 onClick={() =>
                   window.open(
