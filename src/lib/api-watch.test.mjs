@@ -26,6 +26,8 @@ function setup(t, fetchImpl = async () => Response.json([])) {
 
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
+const workspace = (name) => ({ name, namespace: "team", type: "vm", image: "example/image", ready_replicas: 1, stopped: false });
+
 test("workspace watch authenticates, reconnects with polling fallback, and cleans up", async (t) => {
   setup(t);
   const snapshots = [];
@@ -35,7 +37,7 @@ test("workspace watch authenticates, reconnects with polling fallback, and clean
   const source = FakeEventSource.instances[0];
   assert.equal(source.options.withCredentials, true);
   assert.match(source.url, /namespace=team/);
-  source.snapshot('[{"name":"live"}]');
+  source.snapshot(JSON.stringify([workspace("live")]));
   await flush();
   const calls = fetch.mock.calls.length;
   t.mock.timers.tick(5000);
@@ -67,10 +69,10 @@ test("a late polling response cannot overwrite a newer watch snapshot", async (t
   const snapshots = [];
   const stop = watchWorkspaces("team", (items) => snapshots.push(items), (err) => assert.fail(err));
   t.after(stop);
-  FakeEventSource.instances[0].snapshot('[{"name":"new"}]');
-  resolve(Response.json([{ name: "old" }]));
+  FakeEventSource.instances[0].snapshot(JSON.stringify([workspace("new")]));
+  resolve(Response.json([workspace("old")]));
   await flush();
-  assert.deepEqual(snapshots, [[{ name: "new" }]]);
+  assert.deepEqual(snapshots, [[workspace("new")]]);
 });
 
 test("malformed snapshots close the stream and activate fallback", async (t) => {
@@ -83,4 +85,19 @@ test("malformed snapshots close the stream and activate fallback", async (t) => 
   assert.equal(source.closed, true);
   t.mock.timers.tick(1000);
   assert.equal(FakeEventSource.instances.length, 2);
+});
+
+test("service-model JSON cannot reach the workspace renderer", async (t) => {
+  setup(t, async () => Response.json([workspace("poll")]));
+  const snapshots = [];
+  const stop = watchWorkspaces("team", (items) => snapshots.push(items), (err) => assert.fail(err));
+  t.after(stop);
+  await flush();
+  const source = FakeEventSource.instances[0];
+  source.snapshot(JSON.stringify([{ Name: "broken", Namespace: "team", Type: "vm", Image: "example/image", ReadyReplicas: 1, Stopped: false }]));
+  assert.equal(source.closed, true);
+  t.mock.timers.tick(5000);
+  await flush();
+  assert.ok(fetch.mock.calls.length >= 2, "invalid snapshot did not leave polling enabled");
+  for (const items of snapshots) assert.deepEqual(items, [workspace("poll")]);
 });

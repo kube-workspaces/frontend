@@ -67,6 +67,15 @@ export interface Workspace {
 
 // One subscription owns reconnects and a five-second polling fallback. Each
 // event is a full snapshot, so reconnects need no event-id replay protocol.
+function isWorkspaceSnapshot(value: unknown): value is Workspace[] {
+  return Array.isArray(value) && value.every((item) => (
+    item !== null && typeof item === "object"
+    && typeof item.name === "string" && typeof item.namespace === "string"
+    && typeof item.type === "string" && typeof item.image === "string"
+    && typeof item.ready_replicas === "number" && typeof item.stopped === "boolean"
+  ));
+}
+
 export function watchWorkspaces(
   namespace: string,
   onSnapshot: (items: Workspace[]) => void,
@@ -90,6 +99,7 @@ export function watchWorkspaces(
       });
       if (!res.ok) throw await apiError(res, "Failed to list workspaces");
       const items = await res.json();
+      if (items !== null && !isWorkspaceSnapshot(items)) throw new Error("Invalid workspace list response");
       if (!stopped && version === snapshotVersion) onSnapshot(items || []);
     } catch (err) {
       if (!stopped && version === snapshotVersion) onError(err instanceof Error ? err : new Error("Failed to list workspaces"));
@@ -119,7 +129,7 @@ export function watchWorkspaces(
       if (stopped || current !== source) return;
       try {
         const items = JSON.parse((event as MessageEvent<string>).data);
-        if (items !== null && !Array.isArray(items)) throw new Error("Invalid workspace snapshot");
+        if (items !== null && !isWorkspaceSnapshot(items)) throw new Error("Invalid workspace snapshot");
         snapshotVersion++;
         if (poll) { clearInterval(poll); poll = undefined; }
         backoff = 1000;
