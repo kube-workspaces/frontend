@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { useNamespace } from "@/lib/namespace";
 import { UserAvatar } from "@/components/user-avatar";
 import SSHKeysPanel from "@/components/ssh-keys-panel";
+import DevicesPanel from "@/components/devices-panel";
 import Link from "next/link";
 
 export default function ProfilePage() {
@@ -152,6 +153,7 @@ export default function ProfilePage() {
 
       {/* SSH Keys */}
       <SSHKeysPanel />
+      {authConfig?.enabled && <DevicesPanel key={user.email} />}
 
       {/* Groups */}
       {user.groups && user.groups.length > 0 && (

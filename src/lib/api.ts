@@ -4,6 +4,30 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? (process.env.NEXT_PUBLIC_API_URL).replace(/\/+$/, "")
   : "/api";
 
+export interface DeviceInfo {
+  deviceId: string;
+  name: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export async function listDevices(signal?: AbortSignal): Promise<DeviceInfo[]> {
+  const res = await fetch(`${API_BASE}/auth/device/list?scope=own`, { credentials: "include", cache: "no-store", signal });
+  if (!res.ok) throw await apiError(res, "Failed to list devices");
+  const data = await res.json();
+  return data.devices || [];
+}
+
+export async function revokeDevice(deviceId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/device/revoke`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_id: deviceId }),
+  });
+  if (!res.ok) throw await apiError(res, "Failed to revoke device");
+}
+
 // Extract a meaningful error message from a failed response.
 // HTTP/2 does not transmit statusText, so we read the body as fallback.
 async function apiError(res: Response, prefix: string): Promise<Error> {
@@ -39,6 +63,82 @@ export interface Workspace {
   stopped: boolean;
   created_at?: string;
   volume_mounts?: VolumeMount[];
+}
+
+// One subscription owns reconnects and a five-second polling fallback. Each
+// event is a full snapshot, so reconnects need no event-id replay protocol.
+export function watchWorkspaces(
+  namespace: string,
+  onSnapshot: (items: Workspace[]) => void,
+  onError: (error: Error) => void,
+): () => void {
+  let stopped = false;
+  let source: EventSource | null = null;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let poll: ReturnType<typeof setInterval> | undefined;
+  let backoff = 1000;
+  let polling = false;
+  let snapshotVersion = 0;
+  const controller = new AbortController();
+  const pollOnce = async () => {
+    if (polling || stopped) return;
+    polling = true;
+    const version = snapshotVersion;
+    try {
+      const res = await fetch(`${API_BASE}/v1/workspaces?namespace=${encodeURIComponent(namespace)}`, {
+        credentials: "include", cache: "no-store", signal: controller.signal,
+      });
+      if (!res.ok) throw await apiError(res, "Failed to list workspaces");
+      const items = await res.json();
+      if (!stopped && version === snapshotVersion) onSnapshot(items || []);
+    } catch (err) {
+      if (!stopped && version === snapshotVersion) onError(err instanceof Error ? err : new Error("Failed to list workspaces"));
+    } finally {
+      polling = false;
+    }
+  };
+  const fallback = () => {
+    if (!poll) {
+      void pollOnce();
+      poll = setInterval(() => void pollOnce(), 5000);
+    }
+  };
+  const connect = () => {
+    if (stopped) return;
+    source = new EventSource(`${API_BASE}/v1/workspaces/watch?namespace=${encodeURIComponent(namespace)}`, { withCredentials: true });
+    const current = source;
+    const reconnect = () => {
+      current.close();
+      if (stopped || current !== source) return;
+      source = null;
+      fallback();
+      retry = setTimeout(connect, backoff);
+      backoff = Math.min(backoff * 2, 30000);
+    };
+    current.addEventListener("snapshot", (event) => {
+      if (stopped || current !== source) return;
+      try {
+        const items = JSON.parse((event as MessageEvent<string>).data);
+        if (items !== null && !Array.isArray(items)) throw new Error("Invalid workspace snapshot");
+        snapshotVersion++;
+        if (poll) { clearInterval(poll); poll = undefined; }
+        backoff = 1000;
+        onSnapshot(items || []);
+      } catch {
+        reconnect();
+      }
+    });
+    current.onerror = reconnect;
+  };
+  fallback();
+  connect();
+  return () => {
+    stopped = true;
+    controller.abort();
+    source?.close();
+    if (retry) clearTimeout(retry);
+    if (poll) clearInterval(poll);
+  };
 }
 
 export interface ContainerState {

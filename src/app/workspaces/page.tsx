@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   listWorkspaces,
+  watchWorkspaces,
   listImages,
   startWorkspace,
   stopWorkspace,
@@ -81,18 +82,30 @@ function WorkspacesContent() {
     }
   }, [namespace]);
 
-  const fetchWorkspacesRef = useRef(fetchWorkspaces);
   useEffect(() => {
-    fetchWorkspacesRef.current = fetchWorkspaces;
-  }, [fetchWorkspaces]);
-
-  useEffect(() => {
-    fetchWorkspacesRef.current();
-    // Pause auto-refresh while the terminal modal is open
-    if (terminalTarget) return;
-    const interval = setInterval(() => fetchWorkspacesRef.current(), 5000);
-    return () => clearInterval(interval);
-  }, [fetchWorkspaces, terminalTarget]);
+    let cancelled = false;
+    // Image metadata has its own lifetime; do not re-fetch the catalog for
+    // every workspace event. Keep mutations/manual refresh using fetchWorkspaces.
+    (async () => {
+      try {
+        const items = await listImages();
+        if (!cancelled) setImages(items || []);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to fetch images");
+      }
+    })();
+    const stop = watchWorkspaces(namespace || "_all", (items) => {
+      if (cancelled) return;
+      setWorkspaces(items);
+      setLoading(false);
+      setError(null);
+    }, (err) => {
+      if (cancelled) return;
+      setError(err.message);
+      setLoading(false);
+    });
+    return () => { cancelled = true; stop(); };
+  }, [namespace]);
 
   const handleStart = async (name: string, ns: string) => {
     try {

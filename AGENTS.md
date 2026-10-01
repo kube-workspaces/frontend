@@ -17,6 +17,7 @@ npm install        # install dependencies
 npm run dev        # dev server (port 3000)
 npm run build      # production build
 npm run lint       # eslint
+npm test           # workspace watch reconnect/fallback acceptance (Node 22+)
 ```
 
 ## Key Notes
