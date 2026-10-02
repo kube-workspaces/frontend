@@ -68,16 +68,17 @@ export default function VolumesPage() {
       const usageMap = new Map<string, string[]>();
       for (const ws of workspaces) {
         for (const vm of ws.volume_mounts || []) {
-          const existing = usageMap.get(vm.name) || [];
+          const key = `${ws.namespace}/${vm.name}`;
+          const existing = usageMap.get(key) || [];
           existing.push(ws.name);
-          usageMap.set(vm.name, existing);
+          usageMap.set(key, existing);
         }
       }
 
       const enriched: VolumeWithUsage[] = (allVolumes || []).map((v) => ({
         ...v,
-        inUse: usageMap.has(v.name),
-        usedBy: usageMap.get(v.name) || [],
+        inUse: usageMap.has(`${v.namespace}/${v.name}`),
+        usedBy: usageMap.get(`${v.namespace}/${v.name}`) || [],
       }));
 
       setVolumes(enriched);

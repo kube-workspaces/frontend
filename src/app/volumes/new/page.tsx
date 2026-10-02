@@ -16,6 +16,7 @@ export default function NewVolumePage() {
   const [size, setSize] = useState("5Gi");
   const [storageClass, setStorageClass] = useState("");
   const [accessMode, setAccessMode] = useState("ReadWriteOnce");
+  const [volumeType, setVolumeType] = useState<"pvc" | "vm-disk">("pvc");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -40,11 +41,12 @@ export default function NewVolumePage() {
 
     try {
       await createVolume({
+        type: volumeType,
         name,
         namespace,
         size,
         storage_class: storageClass || undefined,
-        access_mode: accessMode,
+        access_mode: volumeType === "vm-disk" ? "ReadWriteOnce" : accessMode,
       });
       router.push(`/volumes/${name}`);
     } catch (err) {
@@ -77,6 +79,14 @@ export default function NewVolumePage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="volumeType" className="block text-xs font-medium text-gray-600 dark:text-gray-400">Volume Type</label>
+          <select id="volumeType" value={volumeType} onChange={(e) => setVolumeType(e.target.value as "pvc" | "vm-disk")} className={inputClass}>
+            <option value="pvc">Container PVC</option>
+            <option value="vm-disk">VM Data Disk (CDI)</option>
+          </select>
+          {volumeType === "vm-disk" && <p className="mt-1 text-xs text-gray-500">Reusable blank ext4 guest disk. Requires CDI; retained until explicitly deleted, independently of workspaces.</p>}
+        </div>
         <div>
           <label htmlFor="name" className="block text-xs font-medium text-gray-600 dark:text-gray-400">Name</label>
           <input type="text" id="name" value={name} onChange={(e) => setName(e.target.value)} pattern="^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$" maxLength={63} required placeholder="my-data" autoFocus className={inputClass} />
@@ -112,8 +122,8 @@ export default function NewVolumePage() {
           <label htmlFor="accessMode" className="block text-xs font-medium text-gray-600 dark:text-gray-400">Access Mode</label>
           <select id="accessMode" value={accessMode} onChange={(e) => setAccessMode(e.target.value)} className={inputClass}>
             <option value="ReadWriteOnce">ReadWriteOnce</option>
-            <option value="ReadWriteMany">ReadWriteMany</option>
-            <option value="ReadOnlyMany">ReadOnlyMany</option>
+            {volumeType !== "vm-disk" && <option value="ReadWriteMany">ReadWriteMany</option>}
+            {volumeType !== "vm-disk" && <option value="ReadOnlyMany">ReadOnlyMany</option>}
           </select>
         </div>
 

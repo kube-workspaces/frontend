@@ -196,11 +196,12 @@ function NewWorkspaceForm() {
         selectedVolumes.map(async (v) => {
           if (v.isNew && v.name) {
             await createVolume({
+              type: workspaceType === "vm" ? "vm-disk" : "pvc",
               name: v.name,
               namespace,
               size: v.newSize || "5Gi",
               storage_class: v.newStorageClass || undefined,
-              access_mode: v.newAccessMode || "ReadWriteOnce",
+              access_mode: workspaceType === "vm" ? "ReadWriteOnce" : v.newAccessMode || "ReadWriteOnce",
             });
           }
           return { name: v.name, mount_path: v.mountPath };
@@ -241,11 +242,11 @@ function NewWorkspaceForm() {
           memory_limit: memoryLimit,
           ...(gpuEnabled && gpuCount ? { gpu_request: gpuCount, gpu_vendor: gpuVendor } : {}),
         },
-        volume_mounts: workspaceType === "vm" ? [] : volumeMounts,
+        volume_mounts: volumeMounts,
         ...(filteredEnv.length > 0 ? { env: filteredEnv } : {}),
         ...(allTolerations.length > 0 ? { tolerations: allTolerations } : {}),
         ...(Object.keys(allNodeSelector).length > 0 ? { node_selector: allNodeSelector } : {}),
-        ...(shmEnabled ? { shared_memory: true } : {}),
+        ...(shmEnabled && workspaceType !== "vm" ? { shared_memory: true } : {}),
         ...(imagePullPolicy !== "IfNotPresent" ? { image_pull_policy: imagePullPolicy } : {}),
       });
       router.push("/workspaces");
@@ -359,6 +360,7 @@ function NewWorkspaceForm() {
                 type="button"
                 onClick={() => {
                   setWorkspaceType(t.value);
+                  if (workspaceType !== t.value) setSelectedVolumes([]);
                   // Re-pick the image from the newly-filtered list, keeping the
                   // current selection if it still applies.
                   const allowed = filterImagesByType(images, t.value);
@@ -660,11 +662,10 @@ function NewWorkspaceForm() {
           )}
         </div>
 
-        {/* Volumes (not applicable to VM workspaces — containerDisk root is ephemeral) */}
-        {workspaceType !== "vm" && (
+        {/* Reusable container PVCs or CDI-backed guest data disks. */}
         <div>
           <div className="flex justify-between items-center mb-2">
-            <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Volumes</label>
+            <label className="text-xs font-medium text-gray-600 dark:text-gray-400">{workspaceType === "vm" ? "VM Data Disks" : "Volumes"}</label>
             <div className="flex gap-1">
               <button type="button" onClick={() => addVolume(false)} className="text-[10px] text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium">
                 + Existing
@@ -675,6 +676,7 @@ function NewWorkspaceForm() {
               </button>
             </div>
           </div>
+          {workspaceType === "vm" && <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-2">Requires a cloud-init image. Blank CDI disks are formatted as ext4 and mounted inside the guest on each boot. Disks survive workspace reset/deletion; delete them separately in Volumes. One workspace per writable disk.</p>}
           {selectedVolumes.map((vol, index) => (
             <div key={index} className="border border-gray-200 dark:border-gray-800 rounded-md p-3 mb-2">
               <div className="flex justify-between items-center mb-2">
@@ -711,17 +713,17 @@ function NewWorkspaceForm() {
                       <label className="block text-[10px] text-gray-400 dark:text-gray-500">Access Mode</label>
                       <select value={vol.newAccessMode || "ReadWriteOnce"} onChange={(e) => updateNewVol(index, "newAccessMode", e.target.value)} className={inputClass}>
                         <option value="ReadWriteOnce">ReadWriteOnce</option>
-                        <option value="ReadWriteMany">ReadWriteMany</option>
-                        <option value="ReadOnlyMany">ReadOnlyMany</option>
+                        {workspaceType !== "vm" && <option value="ReadWriteMany">ReadWriteMany</option>}
+                        {workspaceType !== "vm" && <option value="ReadOnlyMany">ReadOnlyMany</option>}
                       </select>
                     </div>
                   </>
                 ) : (
                   <div className="col-span-2">
-                    <label className="block text-[10px] text-gray-400 dark:text-gray-500">PVC Name</label>
+                    <label className="block text-[10px] text-gray-400 dark:text-gray-500">{workspaceType === "vm" ? "VM Disk Name" : "PVC Name"}</label>
                     <select value={vol.name} onChange={(e) => updateVolume(index, "name", e.target.value)} className={inputClass}>
                       <option value="">Select...</option>
-                      {volumes.map((v) => (
+                      {volumes.filter((v) => v.namespace === namespace && (workspaceType === "vm" ? v.type === "vm-disk" : v.type !== "vm-disk")).map((v) => (
                         <option key={v.name} value={v.name}>{v.name} ({v.size})</option>
                       ))}
                     </select>
@@ -729,7 +731,7 @@ function NewWorkspaceForm() {
                 )}
                 <div className={vol.isNew ? "col-span-2" : "col-span-2"}>
                   <label className="block text-[10px] text-gray-400 dark:text-gray-500">Mount Path</label>
-                  <input type="text" value={vol.mountPath} onChange={(e) => updateVolume(index, "mountPath", e.target.value)} placeholder="/data" className={inputClass} />
+                  <input type="text" value={vol.mountPath} onChange={(e) => updateVolume(index, "mountPath", e.target.value)} required placeholder="/data" className={inputClass} />
                 </div>
               </div>
             </div>
@@ -738,8 +740,6 @@ function NewWorkspaceForm() {
             <p className="text-[10px] text-gray-400 dark:text-gray-500">No volumes attached.</p>
           )}
         </div>
-        )}
-
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => router.push("/workspaces")} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
             Cancel

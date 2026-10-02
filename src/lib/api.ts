@@ -229,6 +229,7 @@ export interface CloneWorkspacePayload {
 }
 
 export interface Volume {
+  type?: "pvc" | "vm-disk";
   name: string;
   namespace: string;
   size: string;
@@ -240,6 +241,7 @@ export interface Volume {
 }
 
 export interface CreateVolumePayload {
+  type?: "pvc" | "vm-disk";
   name: string;
   namespace: string;
   size: string;

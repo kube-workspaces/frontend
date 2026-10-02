@@ -123,6 +123,7 @@ export default function VolumeDetailPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white">{volume.name}</h1>
               {getPhaseBadge(volume.phase)}
+              <span className="text-xs text-gray-500">{volume.type === "vm-disk" ? "VM Data Disk" : "Container PVC"}</span>
             </div>
             <p className="text-xs text-gray-400 dark:text-gray-500">{volume.namespace}</p>
           </div>
