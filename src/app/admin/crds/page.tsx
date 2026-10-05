@@ -30,41 +30,81 @@ function cleanObject(obj: Record<string, unknown>): Record<string, unknown> {
 }
 
 export default function CRDBrowserPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>("crds");
   const [crds, setCRDs] = useState<CRDDefinition[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const items = await listCRDDefinitions();
+        if (!cancelled) setCRDs(items);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to fetch CRDs");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-sm text-gray-500 dark:text-gray-400">Loading CRDs...</div>
+      </div>
+    );
+  }
+
+  const workspaceCRDs = crds.filter((crd) => (crd.spec?.group || crd.group) === "kubeworkspaces.io");
+  const kubevirtCRDs = crds.filter((crd) => {
+    const group = crd.spec?.group || crd.group || "";
+    return group === "kubevirt.io" || group.endsWith(".kubevirt.io");
+  }).sort((a, b) => (a.name || a.metadata?.name || "").localeCompare(b.name || b.metadata?.name || ""));
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">CRD Browser</h1>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Browse kube-workspaces and KubeVirt CustomResourceDefinitions and their instances.</p>
+      </div>
+      {error ? (
+        <div className="border border-red-200 dark:border-red-800 rounded-md bg-red-50 dark:bg-red-900/20 p-3">
+          <p className="text-xs text-red-700 dark:text-red-400">{error}</p>
+        </div>
+      ) : (
+        <>
+          <CRDBrowser title="kube-workspaces CRDs" crds={workspaceCRDs} />
+          <CRDBrowser title="KubeVirt CRDs" crds={kubevirtCRDs} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function CRDBrowser({ title, crds }: { title: string; crds: CRDDefinition[] }) {
+  const [viewMode, setViewMode] = useState<ViewMode>("crds");
   const [selectedCRD, setSelectedCRD] = useState<CRDDefinition | null>(null);
   const [instances, setInstances] = useState<Record<string, unknown>[]>([]);
   const [selectedInstance, setSelectedInstance] = useState<Record<string, unknown> | null>(null);
   const [instanceFormat, setInstanceFormat] = useState<InstanceFormat>("yaml");
   const [cleanInstance, setCleanInstance] = useState(true);
-  const [loading, setLoading] = useState(true);
   const [instancesLoading, setInstancesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchCRDs() {
-      try {
-        const items = await listCRDDefinitions();
-        setCRDs(items);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch CRDs");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchCRDs();
-  }, []);
 
   const handleSelectCRD = useCallback(async (crd: CRDDefinition) => {
     setSelectedCRD(crd);
     setSelectedInstance(null);
+    setError(null);
     // Fetch full definition if we have a name
     const crdName = crd.name || crd.metadata?.name;
     if (crdName) {
       try {
         const full = await getCRDDefinition(crdName);
-        setSelectedCRD(full);
+        setSelectedCRD((current) =>
+          (current?.name || current?.metadata?.name) === crdName ? full : current
+        );
       } catch {
         // Use the list version if fetch fails
       }
@@ -76,11 +116,13 @@ export default function CRDBrowserPage() {
     setViewMode("instances");
     setInstancesLoading(true);
     setSelectedInstance(null);
+    setInstances([]);
+    setError(null);
     try {
       const group = selectedCRD.spec?.group || selectedCRD.group || "";
       const plural = selectedCRD.spec?.names?.plural || selectedCRD.plural || "";
-      const versions = selectedCRD.spec?.versions || [];
-      const version = versions.find((v: { name: string; served: boolean }) => v.served)?.name || versions[0]?.name || "v1";
+      const versions = selectedCRD.spec?.versions || selectedCRD.versions || [];
+      const version = versions.find((v) => v.served && v.storage)?.name || versions.find((v) => v.served)?.name || "v1";
       const items = await listCRDInstances(group, version, plural);
       setInstances(items);
     } catch (err) {
@@ -95,25 +137,18 @@ export default function CRDBrowserPage() {
     setViewMode("crds");
     setSelectedInstance(null);
     setInstances([]);
+    setError(null);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-sm text-gray-500 dark:text-gray-400">Loading CRDs...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-4">
+    <section aria-label={title} className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">CRD Browser</h1>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {viewMode === "crds"
               ? "Browse CustomResourceDefinitions in the cluster"
-              :               `Instances of ${selectedCRD?.spec?.names?.kind || selectedCRD?.kind || "CRD"}`}
+              : `Instances of ${selectedCRD?.spec?.names?.kind || selectedCRD?.kind || "CRD"}`}
           </p>
         </div>
         {viewMode === "instances" && (
@@ -155,7 +190,7 @@ export default function CRDBrowserPage() {
                     const group = crd.spec?.group || crd.group || "";
                     const plural = crd.spec?.names?.plural || crd.plural || "";
                     const scope = crd.spec?.scope || crd.scope || "";
-                    const versions = crd.spec?.versions || [];
+                    const versions = crd.spec?.versions || crd.versions || [];
                     const versionStr = versions[0]?.name || "";
                     return (
                       <li key={crdName}>
@@ -312,7 +347,7 @@ export default function CRDBrowserPage() {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -323,7 +358,7 @@ function CRDDetail({ crd }: { crd: CRDDefinition }) {
   const singular = crd.spec?.names?.singular || "";
   const scope = crd.spec?.scope || crd.scope || "";
   const shortNames = crd.spec?.names?.shortNames || [];
-  const versions = crd.spec?.versions || [];
+  const versions = crd.spec?.versions || crd.versions || [];
   const conditions = crd.status?.conditions || [];
   const readyCondition = conditions.find((c) => c.type === "Established");
 
