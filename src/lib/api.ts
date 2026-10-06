@@ -63,6 +63,8 @@ export interface Workspace {
   stopped: boolean;
   created_at?: string;
   volume_mounts?: VolumeMount[];
+  vm_profile?: string;
+  provisioned?: boolean;
 }
 
 // One subscription owns reconnects and a five-second polling fallback. Each
@@ -194,6 +196,12 @@ export interface CreateWorkspacePayload {
   node_selector?: Record<string, string>;
   shared_memory?: boolean;
   image_pull_policy?: string;
+  vm_options?: {
+    import_secret_name?: string;
+    import_cert_config_map_name?: string;
+    storage_class_name?: string;
+    root_disk_size?: string;
+  };
 }
 
 export interface EnvVar {
@@ -283,6 +291,11 @@ export interface WorkspaceImage {
   workspace_types?: string[];
   links?: ImageLink[];
   default_credentials?: ImageCredentials;
+  vm_profile?: string;
+  persistent_root_disk?: boolean;
+  persistent_root_disk_size?: string;
+  memory_limit?: string;
+  memory_request?: string;
 }
 
 export interface ImageLink {
@@ -359,6 +372,14 @@ export async function createWorkspace(payload: CreateWorkspacePayload): Promise<
     const error = await res.text();
     throw new Error(`Failed to create workspace: ${error}`);
   }
+  return res.json();
+}
+
+export async function getWorkspaceInitialCredentials(name: string, namespace: string): Promise<{ username: string; password: string }> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${encodeURIComponent(name)}/credentials?namespace=${encodeURIComponent(namespace)}`, {
+    credentials: "include", cache: "no-store",
+  });
+  if (!res.ok) throw await apiError(res, "Initial credentials unavailable");
   return res.json();
 }
 

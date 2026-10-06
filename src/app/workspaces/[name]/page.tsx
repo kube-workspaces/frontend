@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { stringify as yamlStringify } from "yaml";
+import WindowsCredentials from "@/components/windows-credentials";
 import {
   getWorkspace,
   getWorkspaceLogs,
@@ -441,6 +442,7 @@ export default function WorkspaceDetailPage() {
   }
 
   const isVM = workspace.type === "vm";
+  const isWindows = workspace.vm_profile === "windows11-amd64-v1";
   // VM workspaces have no pod metrics and no web UI to connect to yet; the
   // console is their access path. Show the tabs that still work.
   const tabs: { id: Tab; label: string }[] = [
@@ -484,7 +486,7 @@ export default function WorkspaceDetailPage() {
               Connect
             </a>
           )}
-          {isVM && workspace.ready_replicas > 0 && !workspace.stopped && (
+          {isVM && (workspace.ready_replicas > 0 || isWindows) && !workspace.stopped && (
             <button
               onClick={() => {
                 setTerminalMode("display");
@@ -499,7 +501,7 @@ export default function WorkspaceDetailPage() {
               Connect
             </button>
           )}
-          {workspace.ready_replicas > 0 && !workspace.stopped && (
+          {!isWindows && workspace.ready_replicas > 0 && !workspace.stopped && (
             <button
               onClick={() => {
                 setTerminalMode("serial");
@@ -513,7 +515,7 @@ export default function WorkspaceDetailPage() {
               Console
             </button>
           )}
-          {isVM && workspace.ready_replicas > 0 && !workspace.stopped && (
+          {isVM && !isWindows && workspace.ready_replicas > 0 && !workspace.stopped && (
             <button
               onClick={() => {
                 setTerminalMode("ssh");
@@ -697,11 +699,13 @@ Edit
         rebooting={actionLoading}
       />
 
+      {isWindows && <WindowsCredentials key={`${workspace.namespace}/${workspace.name}/${workspace.provisioned}`} name={workspace.name} namespace={workspace.namespace} />}
       {terminalOpen && workspace && (
         <TerminalModal
           workspaceName={workspace.name}
           namespace={workspace.namespace}
           isVM={workspace.type === "vm"}
+          windowsGuest={isWindows}
           initialMode={terminalMode}
           sshDefaultUser={images.find((i) => i.image === workspace.image)?.default_user}
           onClose={() => setTerminalOpen(false)}

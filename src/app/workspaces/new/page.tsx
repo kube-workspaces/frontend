@@ -94,6 +94,11 @@ function NewWorkspaceForm() {
   const [namespace, setNamespace] = useState("");
   const [workspaceType, setWorkspaceType] = useState<"container" | "vm" | "scratch">("container");
   const [selectedImage, setSelectedImage] = useState<WorkspaceImage | null>(null);
+  const isWindows = selectedImage?.vm_profile === "windows11-amd64-v1";
+  const [windowsNode, setWindowsNode] = useState("");
+  const [importSecret, setImportSecret] = useState("");
+  const [registryCA, setRegistryCA] = useState("");
+  const [rootStorageClass, setRootStorageClass] = useState("");
   const [cpuRequest, setCpuRequest] = useState("500m");
   const [memoryRequest, setMemoryRequest] = useState("512Mi");
   const [cpuLimit, setCpuLimit] = useState("2");
@@ -125,6 +130,35 @@ function NewWorkspaceForm() {
   // Helper to check if a field is locked and get its enforced value
   const getFieldLock = (field: string): FormFieldLock | undefined =>
     fieldLocks.find((l) => l.field === field);
+
+  const homeVolType = { name: "", mountPath: "", isNew: true, isAuto: true, newSize: "10Gi", newStorageClass: "", newAccessMode: "ReadWriteOnce" } as const;
+  const applyHomeVolume = (img: WorkspaceImage | null, wsName: string, vols: typeof selectedVolumes) => {
+    const autoIdx = vols.findIndex((v) => v.isAuto);
+    if (img?.default_homedir) {
+      const autoName = wsName ? `${wsName}-home` : "";
+      if (autoIdx >= 0) {
+        const updated = [...vols];
+        updated[autoIdx] = { ...updated[autoIdx], name: autoName, mountPath: img.default_homedir };
+        return updated;
+      }
+      return [...vols, { ...homeVolType, name: autoName, mountPath: img.default_homedir }];
+    }
+    if (autoIdx >= 0) return vols.filter((_, i) => i !== autoIdx);
+    return vols;
+  };
+
+  const chooseImage = (image: WorkspaceImage | null) => {
+    setSelectedImage(image);
+    if (image?.vm_profile === "windows11-amd64-v1") {
+      setWorkspaceType("vm"); setSelectedVolumes([]); setEnvVars([]); setGpuEnabled(false); setShmEnabled(false);
+      setCpuLimit(getFieldLock("cpu_limit")?.value || "4");
+      setMemoryLimit(getFieldLock("memory_limit")?.value || image.memory_limit || "8Gi");
+      setMemoryRequest(getFieldLock("memory_request")?.value || image.memory_request || image.memory_limit || "8Gi");
+    } else if (image) {
+      setSelectedVolumes((v) => applyHomeVolume(image, name, v));
+      setShmEnabled(image.default_shared_memory ?? false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -167,10 +201,18 @@ function NewWorkspaceForm() {
         if (imagesData && imagesData.length > 0) {
           const containerImages = filterImagesByType(imagesData, "container");
           const match = preselectedImage
-            ? containerImages.find((img) => img.image === preselectedImage)
+            ? imagesData.find((img) => img.image === preselectedImage)
             : null;
           const initial = match || containerImages[0] || imagesData[0];
-          setSelectedImage(initial);
+          chooseImage(initial);
+          if (initial.vm_profile === "windows11-amd64-v1") {
+            for (const lock of locks) {
+              if (!lock.value) continue;
+              if (lock.field === "cpu_limit") setCpuLimit(lock.value);
+              if (lock.field === "memory_limit") setMemoryLimit(lock.value);
+              if (lock.field === "memory_request") setMemoryRequest(lock.value);
+            }
+          }
           setSelectedVolumes((v) => applyHomeVolume(initial, "", v));
           setShmEnabled(initial.default_shared_memory ?? false);
         }
@@ -224,6 +266,10 @@ function NewWorkspaceForm() {
           allNodeSelector[ns.key] = ns.value;
         }
       }
+      if (isWindows) {
+        allNodeSelector["kubernetes.io/hostname"] = windowsNode;
+        allNodeSelector["kubernetes.io/arch"] = "amd64";
+      }
 
       // Build env vars (filter empty entries)
       const filteredEnv = envVars.filter((e) => e.name);
@@ -248,6 +294,12 @@ function NewWorkspaceForm() {
         ...(Object.keys(allNodeSelector).length > 0 ? { node_selector: allNodeSelector } : {}),
         ...(shmEnabled && workspaceType !== "vm" ? { shared_memory: true } : {}),
         ...(imagePullPolicy !== "IfNotPresent" ? { image_pull_policy: imagePullPolicy } : {}),
+        ...(isWindows ? { vm_options: {
+          import_secret_name: importSecret || undefined,
+          import_cert_config_map_name: registryCA || undefined,
+          storage_class_name: rootStorageClass || undefined,
+          root_disk_size: selectedImage.persistent_root_disk_size || "80Gi",
+        } } : {}),
       });
       router.push("/workspaces");
     } catch (err) {
@@ -279,25 +331,6 @@ function NewWorkspaceForm() {
     const updated = [...selectedVolumes];
     updated[index][field] = value;
     setSelectedVolumes(updated);
-  };
-
-  const homeVolType = { name: "", mountPath: "", isNew: true, isAuto: true, newSize: "10Gi", newStorageClass: "", newAccessMode: "ReadWriteOnce" } as const;
-
-  const applyHomeVolume = (img: WorkspaceImage | null, wsName: string, vols: typeof selectedVolumes) => {
-    const autoIdx = vols.findIndex((v) => v.isAuto);
-    if (img?.default_homedir) {
-      const autoName = wsName ? `${wsName}-home` : "";
-      if (autoIdx >= 0) {
-        const updated = [...vols];
-        updated[autoIdx] = { ...updated[autoIdx], name: autoName, mountPath: img.default_homedir };
-        return updated;
-      }
-      return [...vols, { ...homeVolType, name: autoName, mountPath: img.default_homedir }];
-    }
-    if (autoIdx >= 0) {
-      return vols.filter((_, i) => i !== autoIdx);
-    }
-    return vols;
   };
 
   if (loading) {
@@ -364,7 +397,7 @@ function NewWorkspaceForm() {
                   // Re-pick the image from the newly-filtered list, keeping the
                   // current selection if it still applies.
                   const allowed = filterImagesByType(images, t.value);
-                  setSelectedImage((cur) => (cur && allowed.find((i) => i.image === cur.image) ? cur : allowed[0] || null));
+                  chooseImage(selectedImage && allowed.find((i) => i.image === selectedImage.image) ? selectedImage : allowed[0] || null);
                 }}
                 className={`flex-1 px-2.5 py-2 rounded-md border text-left transition-colors ${
                   workspaceType === t.value
@@ -410,7 +443,7 @@ function NewWorkspaceForm() {
                               : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
                           }`}
                         >
-                          <input type="radio" name="image" value={img.image} checked={selectedImage?.image === img.image} onChange={() => { setSelectedImage(img); setSelectedVolumes((v) => applyHomeVolume(img, name, v)); setShmEnabled(img.default_shared_memory ?? false); }} className="sr-only" />
+                          <input type="radio" name="image" value={img.image} checked={selectedImage?.image === img.image} onChange={() => chooseImage(img)} className="sr-only" />
                           {img.icon && (
                             img.icon.trimStart().startsWith("<svg") ? (
                               <span className="w-6 h-6 mr-2.5 rounded flex-shrink-0 inline-flex items-center justify-center" dangerouslySetInnerHTML={{ __html: img.icon }} />
@@ -454,8 +487,17 @@ function NewWorkspaceForm() {
           </div>
         </div>
 
+        {isWindows && <fieldset className="space-y-2 rounded-md border border-gray-200 dark:border-gray-800 p-3">
+          <legend className="text-xs font-medium">Windows persistent root</legend>
+          <p className="text-xs text-gray-500">Minimum 2 CPU cores / 4Gi RAM / 80Gi root, plus launcher and import storage overhead. Access uses the graphical display.</p>
+          <label className="block text-xs">Certified amd64 worker hostname<input required value={windowsNode} onChange={(e) => setWindowsNode(e.target.value)} className={inputClass} /></label>
+          <label className="block text-xs">CDI import Secret name<input value={importSecret} onChange={(e) => setImportSecret(e.target.value)} placeholder="registry-import (same namespace)" className={inputClass} /></label>
+          <label className="block text-xs">Registry CA ConfigMap name<input value={registryCA} onChange={(e) => setRegistryCA(e.target.value)} placeholder="Optional private CA" className={inputClass} /></label>
+          <label className="block text-xs">Root StorageClass<input value={rootStorageClass} onChange={(e) => setRootStorageClass(e.target.value)} placeholder="Cluster default" className={inputClass} /></label>
+        </fieldset>}
+
         {/* GPU Section */}
-        <div>
+        <div hidden={isWindows}>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-medium text-gray-600 dark:text-gray-400">GPU{getFieldLock("gpu") && renderLockBadge(getFieldLock("gpu")!)}</label>
             <button
@@ -527,7 +569,7 @@ function NewWorkspaceForm() {
         </div>
 
         {/* Environment Variables Section */}
-        <div>
+        <div hidden={isWindows}>
           <div className="flex justify-between items-center mb-2">
             <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Environment Variables</label>
             <button type="button" onClick={() => setEnvVars([...envVars, { name: "", value: "" }])} className="text-[10px] text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium">
@@ -663,7 +705,7 @@ function NewWorkspaceForm() {
         </div>
 
         {/* Reusable container PVCs or CDI-backed guest data disks. */}
-        <div>
+        <div hidden={isWindows}>
           <div className="flex justify-between items-center mb-2">
             <label className="text-xs font-medium text-gray-600 dark:text-gray-400">{workspaceType === "vm" ? "VM Data Disks" : "Volumes"}</label>
             <div className="flex gap-1">

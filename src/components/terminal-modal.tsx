@@ -13,6 +13,7 @@ interface TerminalModalProps {
   namespace: string;
   onClose: () => void;
   isVM?: boolean;
+  windowsGuest?: boolean;
   initialMode?: "serial" | "ssh" | "display";
   /** Guest login hinted to the SSH credential form (usually the image's default user). */
   sshDefaultUser?: string;
@@ -23,6 +24,7 @@ export default function TerminalModal({
   namespace,
   onClose,
   isVM = false,
+  windowsGuest = false,
   initialMode = "serial",
   sshDefaultUser,
 }: TerminalModalProps) {
@@ -31,7 +33,7 @@ export default function TerminalModal({
   const [isDocked, setIsDocked] = useState(false);
   const [elapsed, setElapsed] = useState("");
   const startedAt = useRef(0);
-  const [mode, setMode] = useState<"serial" | "ssh" | "display">(initialMode);
+  const [mode, setMode] = useState<"serial" | "ssh" | "display">(windowsGuest ? "display" : initialMode);
   const [sshUser, setSshUser] = useState("");
   const [sshPrivateKey, setSshPrivateKey] = useState("");
   const [displayConnected, setDisplayConnected] = useState(false);
@@ -198,7 +200,7 @@ export default function TerminalModal({
                 Shared display
               </button>
             )}
-            {isVM && mode === "display" && (
+            {isVM && !windowsGuest && mode === "display" && (
               <button
                 onClick={() => setMode("serial")}
                 className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
@@ -207,7 +209,7 @@ export default function TerminalModal({
                 Console
               </button>
             )}
-            {isVM && mode !== "ssh" && (
+            {isVM && !windowsGuest && mode !== "ssh" && (
               <button
                 onClick={() => setMode("ssh")}
                 className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
@@ -216,7 +218,7 @@ export default function TerminalModal({
                 SSH
               </button>
             )}
-            {isVM && mode === "ssh" && (
+            {isVM && !windowsGuest && mode === "ssh" && (
               <button
                 onClick={() => setMode("serial")}
                 className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"

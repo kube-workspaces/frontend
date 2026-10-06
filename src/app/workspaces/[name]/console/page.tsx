@@ -39,6 +39,8 @@ function ConsoleContent() {
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const [isVM, setIsVM] = useState(false);
+  const [windowsGuest, setWindowsGuest] = useState(false);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
   const [sshDefaultUser, setSshDefaultUser] = useState("debian");
   const [sshUser, setSshUser] = useState("");
   const [sshPrivateKey, setSshPrivateKey] = useState("");
@@ -54,6 +56,9 @@ function ConsoleContent() {
       .then(async (ws) => {
         if (cancelled) return;
         setIsVM(ws.type === "vm");
+        setWindowsGuest(ws.vm_profile === "windows11-amd64-v1");
+        if (ws.vm_profile === "windows11-amd64-v1") setMode("display");
+        setWorkspaceLoaded(true);
         try {
           const images = await listImages();
           const img = images.find((i) => i.image === ws.image);
@@ -64,7 +69,7 @@ function ConsoleContent() {
         }
       })
       .catch(() => {
-        if (!cancelled) setIsVM(false);
+        if (!cancelled) { setIsVM(false); setWorkspaceLoaded(true); }
       });
     return () => {
       cancelled = true;
@@ -106,10 +111,10 @@ function ConsoleContent() {
   const serialDispose = serial.dispose;
 
   useEffect(() => {
-    if (mode !== "serial") return;
+    if (!workspaceLoaded || windowsGuest || mode !== "serial") return;
     serialConnect();
     return serialDispose;
-  }, [mode, serialConnect, serialDispose]);
+  }, [mode, serialConnect, serialDispose, workspaceLoaded, windowsGuest]);
 
   const sshConnect = ssh.connect;
   const sshDispose = ssh.dispose;
@@ -136,6 +141,7 @@ function ConsoleContent() {
             <div className="ml-2 flex items-center gap-1 bg-[#1a1b26] rounded-md p-0.5 border border-gray-700">
               <button
                 onClick={() => setMode("serial")}
+                disabled={windowsGuest}
                 className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
                   mode === "serial"
                     ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
@@ -146,6 +152,7 @@ function ConsoleContent() {
               </button>
               <button
                 onClick={() => setMode("ssh")}
+                disabled={windowsGuest}
                 className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
                   mode === "ssh"
                     ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
