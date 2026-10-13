@@ -71,7 +71,7 @@ export default function AdminImagesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Image Editor</h1>
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Images</h1>
         <button
           onClick={() => setShowAddModal(true)}
           className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 transition-colors"
