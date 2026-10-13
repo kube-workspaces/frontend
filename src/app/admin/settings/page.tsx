@@ -97,7 +97,7 @@ export default function AdminSettingsPage() {
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Auth Settings</h1>
+            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Authentication</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Configure authentication, OIDC, and user provisioning
             </p>

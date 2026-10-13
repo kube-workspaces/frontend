@@ -100,6 +100,14 @@ export default function ImageDetailPage() {
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={handleShowJson}
+            aria-label="View source"
+            title="View source (JSON / YAML)"
+            className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            <span className="font-mono text-[10px]">&lt;/&gt;</span>
+          </button>
           <Link
             href={`/workspaces/new?image=${encodeURIComponent(image.image)}`}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded whitespace-nowrap bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 transition-colors"
@@ -109,14 +117,6 @@ export default function ImageDetailPage() {
             </svg>
             Launch Workspace
           </Link>
-          <button
-            onClick={handleShowJson}
-            aria-label="View source"
-            title="View source (JSON / YAML)"
-            className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-          >
-            <span className="font-mono text-[10px]">&lt;/&gt;</span>
-          </button>
         </div>
       </div>
 
