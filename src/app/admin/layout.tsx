@@ -10,7 +10,6 @@ interface NavItem {
   label: string;
   exact?: boolean;
   icon: React.ReactNode;
-  children?: NavItem[];
 }
 
 interface NavSection {
@@ -64,8 +63,8 @@ const navSections: NavSection[] = [
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
           </svg>
         ),
-        children: [usersItem],
       },
+      usersItem,
       {
         href: "/admin/platform",
         label: "Platform",
@@ -139,10 +138,8 @@ const navSections: NavSection[] = [
   },
 ];
 
-// Flattened for the mobile nav, with nested children listed after their parent.
-const flatNavItems: NavItem[] = navSections.flatMap((section) =>
-  section.items.flatMap((item) => [item, ...(item.children ?? [])]),
-);
+// Flattened for the mobile nav.
+const flatNavItems: NavItem[] = navSections.flatMap((section) => section.items);
 
 const externalLinks = [
   {
@@ -168,11 +165,6 @@ export default function AdminLayout({
     return pathname.startsWith(href);
   }
 
-  function isItemActive(item: NavItem) {
-    if (isActive(item.href, item.exact)) return true;
-    return (item.children ?? []).some((child) => isActive(child.href, child.exact));
-  }
-
   const linkClass = (active: boolean) =>
     `flex items-center gap-2 px-3 py-1.5 text-sm rounded transition-colors ${
       active
@@ -192,18 +184,10 @@ export default function AdminLayout({
                   {section.heading}
                 </div>
                 {section.items.map((item) => (
-                  <div key={item.href}>
-                    <Link href={item.href} className={linkClass(isItemActive(item))}>
-                      {item.icon}
-                      {item.label}
-                    </Link>
-                    {(item.children ?? []).map((child) => (
-                      <Link key={child.href} href={child.href} className={`${linkClass(isActive(child.href, child.exact))} pl-9 mt-0.5`}>
-                        {child.icon}
-                        {child.label}
-                      </Link>
-                    ))}
-                  </div>
+                  <Link key={item.href} href={item.href} className={linkClass(isActive(item.href, item.exact))}>
+                    {item.icon}
+                    {item.label}
+                  </Link>
                 ))}
               </div>
             ))}
