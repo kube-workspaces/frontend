@@ -17,6 +17,11 @@ const navItems = [
     ),
   },
   {
+    href: "/admin/monitoring",
+    label: "Monitoring",
+    icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12h4l3-8 4 16 3-8h4" /></svg>,
+  },
+  {
     href: "/admin/users",
     label: "Users",
     icon: (
