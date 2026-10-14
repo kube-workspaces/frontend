@@ -20,6 +20,7 @@ export default function AdminMonitoringPage() {
   const [connectedOnly, setConnectedOnly] = useState(false);
   const [refresh, setRefresh] = useState(0);
 	const [checkedAt, setCheckedAt] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +30,7 @@ export default function AdminMonitoringPage() {
     const poll = async () => {
       if (cancelled) return;
       if (document.visibilityState !== "hidden") {
+        if (!cancelled) setLoading(true);
         try {
           const res = await fetch(`${API_BASE}/admin/monitoring/overview`, { credentials: "include", cache: "no-store", signal: controller.signal });
           if (!res.ok) throw new Error(`Monitoring request failed (${res.status})`);
@@ -39,6 +41,8 @@ export default function AdminMonitoringPage() {
         } catch (e) {
           if (!cancelled) setError(e instanceof Error ? e.message : "Monitoring unavailable");
           backoff = Math.min(backoff * 2, 30000);
+        } finally {
+          if (!cancelled) setLoading(false);
         }
       }
 		if (!cancelled) setCheckedAt(Date.now());
@@ -73,7 +77,10 @@ export default function AdminMonitoringPage() {
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Monitoring</h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Live workspace connections and client-facing traffic across API and proxy replicas.</p>
         </div>
-        <button className={field} onClick={() => setRefresh((n) => n + 1)}>Refresh</button>
+        <div className="flex flex-col items-end gap-1">
+          <button type="button" disabled={loading} onClick={() => setRefresh((n) => n + 1)} className={`${field} cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 disabled:cursor-wait disabled:opacity-60 shrink-0`}>{loading ? "Refreshing…" : "Refresh"}</button>
+          <p className="text-xs text-gray-500 dark:text-gray-400 text-right">Last checked{checkedAt ? ` ${new Date(checkedAt).toLocaleTimeString()}` : " —"}</p>
+        </div>
       </header>
 
       {!snapshot && !error && <p className="text-sm text-gray-500">Collecting monitoring data…</p>}
