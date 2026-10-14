@@ -127,7 +127,7 @@ export default function AdminMonitoringPage() {
             <p className="mt-1 text-xs text-gray-500">{s.message || (s.observed_at ? `Observed ${new Date(s.observed_at).toLocaleTimeString()}` : "Waiting for report")}</p>
           </div>)}
         </div>
-        <p className="mt-3 text-xs text-gray-500">Workspace/interface packet counters are not collected by this live bridge endpoint. Container CPU/memory remains available on workspace detail pages. Prometheus history: {snapshot?.history_configured ? "configured" : "not configured"}.</p>
+        <p className="mt-3 text-xs text-gray-500">Workspace/interface network bytes and packets are available under Platform / tier history from cluster telemetry. Live bridge rows still exclude interface packets. Container CPU/memory remains available on workspace detail pages. Prometheus history: {snapshot?.history_configured ? "configured" : "not configured"}.</p>
         {snapshot?.observed_at && <p className="mt-2 text-xs text-gray-500">Snapshot: {new Date(snapshot.observed_at).toLocaleString()}</p>}
       </section>
     </div>
@@ -195,21 +195,24 @@ function History({ configured }: { configured: boolean }) {
   }, [configured, metric, range]);
   const chart = useMemo(() => result ? historyChart(result) : null, [result]);
   const colors = ["#f97316", "#3b82f6", "#22c55e", "#a855f7", "#14b8a6", "#e11d48"];
+  const isPackets = metric.includes("packets");
+  const isCounts = metric === "connections" || isPackets;
+  const formatRate = (n: number) => isPackets ? `${n.toFixed(n < 10 ? 1 : 0)} pps` : `${formatBytes(Number(n))}/s`;
   return <section className={`${panel} p-4`}>
     <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-medium text-gray-900 dark:text-white">Platform / tier history</h2><div className="flex gap-2">
-      <select aria-label="Historical metric" className={field} value={metric} onChange={(e) => setMetric(e.target.value)}><option value="connections">Connections</option><option value="toward_workspace">Toward workspaces</option><option value="toward_client">Toward clients</option></select>
+      <select aria-label="Historical metric" className={field} value={metric} onChange={(e) => setMetric(e.target.value)}><option value="connections">Connections</option><option value="toward_workspace">Toward workspaces</option><option value="toward_client">Toward clients</option><option value="network_container_bytes">Container net bytes</option><option value="network_container_packets">Container net packets</option><option value="network_vmi_bytes">VMI net bytes</option><option value="network_vmi_packets">VMI net packets</option></select>
       <select aria-label="History range" className={field} value={range} onChange={(e) => setRange(e.target.value)}><option value="15m">15 minutes</option><option value="1h">1 hour</option><option value="24h">24 hours</option></select>
     </div></div>
     {!configured ? <p className="mt-4 text-sm text-gray-500">Prometheus history is not configured. Live monitoring is available independently.</p> : error ? <p role="status" className="mt-4 text-sm text-amber-600 dark:text-amber-400">{error}</p> : !chart?.rows.length ? <p className="mt-4 text-sm text-gray-500">{loading ? "Loading history…" : "No historical samples available. Check API/proxy scrape targets and collection coverage."}</p> : <>
       <div className="mt-4 h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={chart.rows}>
         <CartesianGrid strokeDasharray="3 3" stroke="#6b7280" opacity={0.2} />
         <XAxis dataKey="timestamp" tickFormatter={(n) => new Date(n).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} tick={{ fontSize: 11 }} minTickGap={40} />
-        <YAxis tickFormatter={(n) => metric === "connections" ? String(n) : formatBytes(n)} tick={{ fontSize: 11 }} width={80} allowDecimals={metric !== "connections"} />
-        <Tooltip labelFormatter={(n) => new Date(Number(n)).toLocaleString()} formatter={(n) => metric === "connections" ? String(n) : `${formatBytes(Number(n))}/s`} />
+        <YAxis tickFormatter={(n) => isCounts ? String(n) : formatBytes(n)} tick={{ fontSize: 11 }} width={80} allowDecimals={metric !== "connections"} />
+        <Tooltip labelFormatter={(n) => new Date(Number(n)).toLocaleString()} formatter={(n) => metric === "connections" ? String(n) : formatRate(Number(n))} />
         {chart.series.map((s, i) => <Line key={s.key} name={s.label} dataKey={s.key} stroke={colors[i % colors.length]} dot={false} isAnimationActive={false} />)}
       </LineChart></ResponsiveContainer></div>
       <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">{chart.series.map((s, i) => <span key={s.key} style={{ color: colors[i % colors.length] }}>{s.label}</span>)}</div>
     </>}
-    <p className="mt-3 text-xs text-gray-500">History is scrape-sampled; brief connections may fall between scrapes. Traffic counters retain transfers after disconnect. No per-session historical timeline is stored.</p>
+    <p className="mt-3 text-xs text-gray-500">History is scrape-sampled; brief connections may fall between scrapes. Traffic counters retain transfers after disconnect. Container/VMI network series are cluster interface counters, not proxy stream bytes; do not sum them with proxy traffic. No per-session historical timeline is stored.</p>
   </section>;
 }

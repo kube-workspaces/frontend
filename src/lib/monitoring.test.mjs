@@ -25,3 +25,12 @@ test("history preserves missing samples and separates tier/transport series", ()
   assert.equal(chart.series[1].label, "Tier 1 · agent");
   assert.throws(() => historyChart({ status: "error" }), /Invalid monitoring/);
 });
+
+test("history labels interface directions without tier or transport", () => {
+  const chart = historyChart({ status: "success", data: { resultType: "matrix", result: [
+    { metric: { direction: "toward_workspace" }, values: [[1, "10"]] },
+    { metric: { direction: "toward_client" }, values: [[1, "20"]] },
+  ] } });
+  assert.deepEqual(chart.rows, [{ timestamp: 1000, series0: 10, series1: 20 }]);
+  assert.deepEqual(chart.series.map((s) => s.label), ["Toward workspaces", "Toward clients"]);
+});

@@ -80,10 +80,12 @@ export interface HistoryResult {
 
 export function historyChart(result: HistoryResult) {
   if (result.status !== "success" || result.data?.resultType !== "matrix") throw new Error("Invalid monitoring history response");
+  const directionLabel = (d?: string) => d === "toward_workspace" ? "Toward workspaces" : d === "toward_client" ? "Toward clients" : "";
   const rows = new Map<number, Record<string, number>>();
   const series = result.data.result.map((item, index) => {
     const key = `series${index}`;
-    const label = [item.metric.tier ? `Tier ${item.metric.tier}` : "", item.metric.transport || item.metric.category || "Platform"].filter(Boolean).join(" · ");
+    const base = [item.metric.tier ? `Tier ${item.metric.tier}` : "", item.metric.transport || item.metric.category || ""].filter(Boolean).join(" · ");
+    const label = [base, directionLabel(item.metric.direction)].filter(Boolean).join(" · ") || item.metric.__name__ || "Platform";
     for (const [timestamp, value] of item.values) {
       const n = Number(value);
       if (!Number.isFinite(n)) continue;
