@@ -75,7 +75,7 @@ export default function CRDBrowserPage() {
         </div>
       ) : (
         <>
-          <CRDBrowser title="kube-workspaces CRDs" crds={workspaceCRDs} />
+          <CRDBrowser title="Kube Workspaces CRDs" crds={workspaceCRDs} />
           <CRDBrowser title="KubeVirt CRDs" crds={kubevirtCRDs} />
         </>
       )}
