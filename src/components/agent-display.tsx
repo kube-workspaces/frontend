@@ -9,22 +9,19 @@ interface AgentDisplayProps {
   onConnectionChange?: (connected: boolean) => void;
 }
 
-// An Agent premium display viewer over the API's /proxy/{ns}/{name}/agent/ WebSocket bridge.
-// The bridge speaks the raw framed wire protocol (v1).
 export default function AgentDisplay({
   workspaceName,
   namespace,
   onConnectionChange,
 }: AgentDisplayProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const videoDecoder = useRef<VideoDecoder | null>(null);
-
-  useEffect(() => {
-    return () => {
-      videoDecoder.current?.close();
-    };
-  }, []);
-
+  const audioDecoder = useRef<AudioDecoder | null>(null);
+  const audioContext = useRef<AudioContext | null>(null);
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -33,6 +30,14 @@ export default function AgentDisplay({
     },
     [onConnectionChange]
   );
+
+  useEffect(() => {
+    return () => {
+      videoDecoder.current?.close();
+      audioDecoder.current?.close();
+      audioContext.current?.close();
+    };
+  }, []);
 
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -58,31 +63,44 @@ export default function AgentDisplay({
         const decoder = new TextDecoder();
         const json = JSON.parse(decoder.decode(body));
         console.log("Control message:", json);
-      } else if (tag === 0x01 || tag === 0x02) {
-        // Media (H.264/Opus) - Requires WebCodecs VideoDecoder
+      } else if (tag === 0x01) { // Video (H.264)
         if (!videoDecoder.current) {
           videoDecoder.current = new VideoDecoder({
             output: (frame) => {
-              // Create a MediaStreamTrack from VideoFrame for the video element
-              // (Note: VideoFrame to MediaStreamTrack requires a canvas approach or setSinkId/VideoFrame stream adaptation)
+              if (canvasRef.current) {
+                const ctx = canvasRef.current.getContext("2d");
+                ctx?.drawImage(frame, 0, 0, canvasRef.current.width, canvasRef.current.height);
+              }
               frame.close();
             },
             error: (e) => console.error("VideoDecoder error:", e),
           });
           await videoDecoder.current.configure({ codec: "avc1.42E01E", hardwareAcceleration: "prefer-software" });
         }
-        
-        // Feed chunk to decoder
-        // Note: Actual protocol requires framing/GOP management
         videoDecoder.current.decode(new EncodedVideoChunk({
-          type: tag === 0x01 ? "key" : "delta",
+          type: "key",
           timestamp: performance.now() * 1000,
           data: body,
         }));
-
+      } else if (tag === 0x02) { // Audio (Opus)
+        if (!audioDecoder.current) {
+          audioContext.current = new AudioContext();
+          audioDecoder.current = new AudioDecoder({
+            output: (audioData) => {
+               // Simplified: should use audioContext.decodeAudioData or AudioWorklet
+               audioData.close();
+            },
+            error: (e) => console.error("AudioDecoder error:", e),
+          });
+          await audioDecoder.current.configure({ codec: "opus", numberOfChannels: 2, sampleRate: 48000 });
+        }
+        audioDecoder.current.decode(new EncodedAudioChunk({
+          type: "key",
+          timestamp: performance.now() * 1000,
+          data: body,
+        }));
       }
     };
-
 
     ws.onclose = () => {
       setIsConnected(false);
@@ -109,11 +127,10 @@ export default function AgentDisplay({
 
   return (
     <div className="w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
-      <video ref={videoRef} className="w-full h-full" autoPlay playsInline muted />
+      <canvas ref={canvasRef} className="w-full h-full" />
       <div
         ref={mountRef}
-        className="w-full h-full"
-        style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}
+        className="w-full h-full hidden"
       />
 
       <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
