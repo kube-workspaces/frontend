@@ -12,7 +12,7 @@ export default function AdminApiPage() {
     initialized.current = true;
 
     const script = document.createElement("script");
-    script.src = "https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js";
+    script.src = "https://cdn.redoc.ly/redoc/v2.1.3/bundles/redoc.standalone.js";
     script.async = true;
     script.onload = () => {
       if (containerRef.current && (window as unknown as Record<string, unknown>).Redoc) {
