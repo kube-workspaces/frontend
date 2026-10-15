@@ -9,6 +9,7 @@ import {
   encodeControlFrame,
   keyToKeysym,
   nextSentAtNs,
+  snapResizeSize,
 } from "./agent-protocol.ts";
 
 describe("agent frame codec", () => {
@@ -55,6 +56,25 @@ describe("resize clamp", () => {
     assert.deepEqual(clampResizeSize(1920.7, 1080.2), { width: 1920, height: 1080 });
     assert.deepEqual(clampResizeSize(100, 100), { width: 320, height: 200 });
     assert.deepEqual(clampResizeSize(20000, 20000), { width: 8192, height: 8192 });
+  });
+});
+
+describe("resize snap to advertised modes", () => {
+  const modes = [
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+    { width: 3840, height: 2160 },
+  ];
+  it("picks the largest mode that fits the request", () => {
+    assert.deepEqual(snapResizeSize(2000, 1200, modes), { width: 1920, height: 1080 });
+    assert.deepEqual(snapResizeSize(1920, 1080, modes), { width: 1920, height: 1080 });
+  });
+  it("falls back to the smallest mode when nothing fits", () => {
+    assert.deepEqual(snapResizeSize(800, 600, modes), { width: 1280, height: 720 });
+  });
+  it("returns null without advertised modes", () => {
+    assert.equal(snapResizeSize(1920, 1080, []), null);
+    assert.equal(snapResizeSize(1920, 1080, [{ width: 0, height: 0 }]), null);
   });
 });
 

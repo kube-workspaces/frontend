@@ -106,9 +106,42 @@ export function annexBHasIdr(unit: Uint8Array): boolean {
   return false;
 }
 
+// Snap a requested size to the guest's advertised OS mode list. The guest
+// tests the exact size (CDS_TEST) and rejects anything outside its discrete
+// modes, so viewers must prefer advertised modes over guessing. Policy:
+// largest mode that fits inside the request (never exceed the viewport);
+// when the request is smaller than every mode, the smallest mode (the
+// guest clamps down rather than failing up). Empty/unknown modes → null
+// and the caller falls back to sending the clamped size as-is.
+export interface DisplayMode {
+  width: number;
+  height: number;
+}
+
+export function snapResizeSize(width: number, height: number, modes: DisplayMode[]): DisplayMode | null {
+  const sane = modes.filter((m) =>
+    Number.isInteger(m.width) && Number.isInteger(m.height) && m.width >= 320 && m.height >= 200);
+  if (sane.length === 0) return null;
+  const fitting = sane.filter((m) => m.width <= width && m.height <= height);
+  const pool = fitting.length > 0 ? fitting : sane;
+  let best = pool[0];
+  if (fitting.length > 0) {
+    for (const m of pool) {
+      if (m.width * m.height > best.width * best.height) best = m;
+    }
+  } else {
+    for (const m of pool) {
+      if (m.width * m.height < best.width * best.height) best = m;
+    }
+  }
+  return { width: best.width, height: best.height };
+}
+
 // Browser resize uses content CSS pixels against the actual guest output.
 // Coalesced upstream (500ms), newest wins; clamp to the guest's accepted
-// range so invalid requests never reach the backend.
+// range so invalid requests never reach the backend. Prefer
+// snapResizeSize against hello.displayModes whenever the guest advertises
+// modes — the guest exact-tests sizes and rejects off-list requests.
 export function clampResizeSize(width: number, height: number): { width: number; height: number } {
   const w = Math.floor(width);
   const h = Math.floor(height);

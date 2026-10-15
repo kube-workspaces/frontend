@@ -12,7 +12,9 @@ import {
   keyToKeysym,
   nextSentAtNs,
   parseControlBody,
+  snapResizeSize,
 } from "@/lib/agent-protocol";
+import type { DisplayMode } from "@/lib/agent-protocol";
 
 interface AgentDisplayProps {
   workspaceName: string;
@@ -36,6 +38,7 @@ interface Caps {
   telemetry: boolean;
   captureW: number;
   captureH: number;
+  modes: DisplayMode[];
 }
 
 function wsUrlFor(namespace: string, name: string): string {
@@ -69,7 +72,7 @@ export default function AgentDisplay({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [takeoverPrompt, setTakeoverPrompt] = useState(false);
   const [takeoverBusy, setTakeoverBusy] = useState(false);
-  const [caps, setCaps] = useState<Caps>({ input: false, resize: false, clipboard: false, telemetry: false, captureW: 0, captureH: 0 });
+  const [caps, setCaps] = useState<Caps>({ input: false, resize: false, clipboard: false, telemetry: false, captureW: 0, captureH: 0, modes: [] });
   const [deskReason, setDeskReason] = useState<string | null>(null);
   const [resizeNote, setResizeNote] = useState<string | null>(null);
   const [clipText, setClipText] = useState("");
@@ -100,7 +103,7 @@ export default function AgentDisplay({
   const audioTsRef = useRef(0);
   const presentedRef = useRef(false);
   const soundOnRef = useRef(false);
-  const capsRef = useRef<Caps>({ input: false, resize: false, clipboard: false, telemetry: false, captureW: 0, captureH: 0 });
+  const capsRef = useRef<Caps>({ input: false, resize: false, clipboard: false, telemetry: false, captureW: 0, captureH: 0, modes: [] });
   const telemetryTimerRef = useRef<number | null>(null);
   const hiTicksRef = useRef(0);
   const pendingResizeRef = useRef<string | null>(null);
@@ -270,6 +273,11 @@ export default function AgentDisplay({
         const capture = (payload.capture ?? {}) as { width?: unknown; height?: unknown };
         const w = typeof capture.width === "number" ? capture.width : 0;
         const h = typeof capture.height === "number" ? capture.height : 0;
+        const modes: DisplayMode[] = Array.isArray(payload.displayModes)
+          ? (payload.displayModes as { width?: unknown; height?: unknown }[])
+              .filter((m) => typeof m.width === "number" && typeof m.height === "number")
+              .map((m) => ({ width: m.width as number, height: m.height as number }))
+          : [];
         const next: Caps = {
           input: payload.inputAvailable === true,
           resize: payload.resizeAvailable === true,
@@ -277,6 +285,7 @@ export default function AgentDisplay({
           telemetry: payload.telemetryAvailable === true,
           captureW: w,
           captureH: h,
+          modes,
         };
         capsRef.current = next;
         setCaps(next);
@@ -493,7 +502,11 @@ export default function AgentDisplay({
         if (disposedRef.current || !admittedRef.current || !capsRef.current.resize) return;
         const host = containerRef.current;
         if (!host || host.clientWidth <= 0 || host.clientHeight <= 0) return;
-        const size = clampResizeSize(host.clientWidth, host.clientHeight);
+        // Snap to the guest's advertised OS modes: it exact-tests sizes and
+        // rejects off-list requests (display-mode-unsupported). Without an
+        // advertised list, send the clamped size and report the verdict.
+        const snapped = snapResizeSize(host.clientWidth, host.clientHeight, capsRef.current.modes);
+        const size = snapped ?? clampResizeSize(host.clientWidth, host.clientHeight);
         resizeCounterRef.current += 1;
         const id = `rs-${resizeCounterRef.current}-${size.width}x${size.height}`;
         pendingResizeRef.current = id;
@@ -629,8 +642,19 @@ export default function AgentDisplay({
     if (!canvas || canvas.width <= 0 || canvas.height <= 0) return;
     const box = canvas.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0) return;
-    const x = Math.max(0, Math.min(canvas.width, Math.floor(((clientX - box.left) / box.width) * canvas.width)));
-    const y = Math.max(0, Math.min(canvas.height, Math.floor(((clientY - box.top) / box.height) * canvas.height)));
+    // The canvas fills its container with object-fit: contain, so the video
+    // rect is the box inset by the letterbox bars. Map against the video
+    // rect, not the element box, and drop presses that land in the bars.
+    const scale = Math.min(box.width / canvas.width, box.height / canvas.height);
+    const vw = canvas.width * scale;
+    const vh = canvas.height * scale;
+    const ox = box.left + (box.width - vw) / 2;
+    const oy = box.top + (box.height - vh) / 2;
+    const fx = (clientX - ox) / scale;
+    const fy = (clientY - oy) / scale;
+    if (fx < 0 || fy < 0 || fx > canvas.width || fy > canvas.height) return;
+    const x = Math.max(0, Math.min(canvas.width, Math.floor(fx)));
+    const y = Math.max(0, Math.min(canvas.height, Math.floor(fy)));
     sendControl("input", { kind: "pointer", x, y, buttons });
   }, [sendControl, deskReason]);
 
@@ -755,8 +779,8 @@ export default function AgentDisplay({
     <div ref={containerRef} className="w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
       <canvas
         ref={canvasRef}
-        className="max-w-full max-h-full"
-        style={{ touchAction: "none" }}
+        className="h-full w-full"
+        style={{ touchAction: "none", objectFit: "contain" }}
         tabIndex={0}
         onPointerMove={handlePointer}
         onPointerDown={handlePointer}
