@@ -63,17 +63,23 @@ export default function AgentDisplay({
         if (!videoDecoder.current) {
           videoDecoder.current = new VideoDecoder({
             output: (frame) => {
-              if (videoRef.current) {
-                // Rendering requires a custom canvas or MediaStream approach
-                // for VideoFrame output.
-                frame.close();
-              }
+              // Create a MediaStreamTrack from VideoFrame for the video element
+              // (Note: VideoFrame to MediaStreamTrack requires a canvas approach or setSinkId/VideoFrame stream adaptation)
+              frame.close();
             },
             error: (e) => console.error("VideoDecoder error:", e),
           });
           await videoDecoder.current.configure({ codec: "avc1.42E01E", hardwareAcceleration: "prefer-software" });
         }
-        // TODO: Decode encoded chunk
+        
+        // Feed chunk to decoder
+        // Note: Actual protocol requires framing/GOP management
+        videoDecoder.current.decode(new EncodedVideoChunk({
+          type: tag === 0x01 ? "key" : "delta",
+          timestamp: performance.now() * 1000,
+          data: body,
+        }));
+
       }
     };
 
