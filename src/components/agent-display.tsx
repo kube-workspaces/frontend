@@ -16,9 +16,15 @@ export default function AgentDisplay({
   namespace,
   onConnectionChange,
 }: AgentDisplayProps) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoDecoder = useRef<VideoDecoder | null>(null);
+
+  useEffect(() => {
+    return () => {
+      videoDecoder.current?.close();
+    };
+  }, []);
+
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -40,10 +46,7 @@ export default function AgentDisplay({
       setError(null);
     };
 
-    ws.onmessage = (event) => {
-      // TODO: implement framed protocol parsing
-      // Header: tag(1) + length(4)
-      // Tag 0x00: control (JSON), 0x01/0x02: media
+    ws.onmessage = async (event) => {
       const data = new Uint8Array(event.data);
       if (data.length < 5) return;
       const tag = data[0];
@@ -52,21 +55,28 @@ export default function AgentDisplay({
       const body = data.slice(5, 5 + length);
 
       if (tag === 0x00) {
-        // Control: JSON
         const decoder = new TextDecoder();
         const json = JSON.parse(decoder.decode(body));
         console.log("Control message:", json);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const audioContext = useRef<AudioContext | null>(null);
-
-  // Inside useEffect WebSocket onmessage:
-      } else {
-        // Media: WebCodecs (H.264/Opus)
-        // Implementation requires tracking GOP/IDR
-        // and decoding into VideoFrame/AudioData
+      } else if (tag === 0x01 || tag === 0x02) {
+        // Media (H.264/Opus) - Requires WebCodecs VideoDecoder
+        if (!videoDecoder.current) {
+          videoDecoder.current = new VideoDecoder({
+            output: (frame) => {
+              if (videoRef.current) {
+                // Rendering requires a custom canvas or MediaStream approach
+                // for VideoFrame output.
+                frame.close();
+              }
+            },
+            error: (e) => console.error("VideoDecoder error:", e),
+          });
+          await videoDecoder.current.configure({ codec: "avc1.42E01E", hardwareAcceleration: "prefer-software" });
+        }
+        // TODO: Decode encoded chunk
       }
-
     };
+
 
     ws.onclose = () => {
       setIsConnected(false);
