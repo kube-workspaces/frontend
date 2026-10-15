@@ -106,6 +106,7 @@ export default function AgentDisplay({
   const pendingResizeRef = useRef<string | null>(null);
   const resizeCounterRef = useRef(0);
   const resizeTimerRef = useRef<number | null>(null);
+  const takeoverSeqRef = useRef(0);
   const pressedRef = useRef<Set<number>>(new Set());
   const connectFnRef = useRef<() => () => void>(() => () => {});
   const soundQueueRef = useRef<number>(0);
@@ -227,6 +228,18 @@ export default function AgentDisplay({
         } else {
           setPhase("degraded");
           setError((prev) => prev ?? "Agent display disconnected");
+          // A dial that never reached hello usually lost a seat race after
+          // a free pre-check. Re-check: a held seat gets the consent
+          // prompt, anything else keeps the disconnected error.
+          void checkTier1InUse(workspaceName, namespace).then((held) => {
+            if (cancelled.current || disposedRef.current) return;
+            if (held) {
+              setTakeoverPrompt(true);
+              setError(null);
+            }
+          }).catch(() => {
+            // The disconnected error above already says enough.
+          });
         }
       };
 
@@ -503,6 +516,29 @@ export default function AgentDisplay({
     try {
       await takeOverTier1(workspaceName, namespace);
       setTakeoverPrompt(false);
+      // Revoking the seat does not free it instantly: the previous
+      // holder's bridge dies on its next failed renew and then releases,
+      // which takes a few seconds. Wait for the freed seat instead of
+      // dialling into a busy bridge and re-prompting. If someone retakes
+      // it meanwhile, the prompt comes back for fresh consent.
+      const seq = (takeoverSeqRef.current += 1);
+      const deadline = Date.now() + 12000;
+      for (;;) {
+        if (disposedRef.current || seq !== takeoverSeqRef.current) return;
+        let inUse = true;
+        try {
+          inUse = await checkTier1InUse(workspaceName, namespace);
+        } catch {
+          inUse = true;
+        }
+        if (disposedRef.current || seq !== takeoverSeqRef.current) return;
+        if (!inUse) break;
+        if (Date.now() >= deadline) {
+          setTakeoverPrompt(true);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
       reconnectNow();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Take over failed");
