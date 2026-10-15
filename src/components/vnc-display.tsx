@@ -38,6 +38,7 @@ export default function VncDisplay({
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
   const takeoverApproved = useRef<boolean>(false);
+  const takeoverSeq = useRef(0);
   const [soundOn, setSoundOn] = useState(false);
   const soundOnRef = useRef(false);
 
@@ -301,6 +302,27 @@ export default function VncDisplay({
         takeoverApproved.current = true;
       }
       setTakeoverPrompt(false);
+      // Revoking the seat does not free it instantly: the previous
+      // holder's relay dies and releases seconds later. Wait for the
+      // freed seat instead of dialling into a 409 and churning.
+      const seq = (takeoverSeq.current += 1);
+      const deadline = Date.now() + 12000;
+      for (;;) {
+        if (disposed.current || seq !== takeoverSeq.current) return;
+        let inUse = true;
+        try {
+          inUse = await checkVNCConsoleInUse(workspaceName, namespace);
+        } catch {
+          inUse = true;
+        }
+        if (disposed.current || seq !== takeoverSeq.current) return;
+        if (!inUse) break;
+        if (Date.now() >= deadline) {
+          setTakeoverPrompt(true);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
       mountRFB();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Take over failed");
