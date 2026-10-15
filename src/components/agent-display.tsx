@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE, checkTier1InUse, takeOverTier1 } from "@/lib/api";
+import { checkTier1InUse, takeOverTier1 } from "@/lib/api";
 import {
   annexBHasIdr,
   clampResizeSize,
@@ -40,11 +40,11 @@ interface Caps {
 
 function wsUrlFor(namespace: string, name: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  if (API_BASE.startsWith("/")) {
-    return `${protocol}//${window.location.host}${API_BASE}/proxy/${namespace}/${name}/agent/?purpose=v1.display`;
-  }
-  const base = API_BASE.replace(/\/+$/, "").replace(/^http/, "ws");
-  return `${base}/proxy/${namespace}/${name}/agent/?purpose=v1.display`;
+  // The agent bridge lives on the proxy service behind the /proxy route on
+  // this host (mirroring getProxyUrl). It must never go under API_BASE:
+  // /api/* routes to the API service, which 404s the bridge and surfaces
+  // as "Agent display disconnected" without ever reaching the guest.
+  return `${protocol}//${window.location.host}/proxy/${namespace}/${name}/agent/?purpose=v1.display`;
 }
 
 // Premium agent viewer over the proxy /agent/ bridge (purpose v1.display).
