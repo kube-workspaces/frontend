@@ -1,0 +1,88 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  annexBHasIdr,
+  clampResizeSize,
+  controlEnvelope,
+  decodeFrame,
+  desktopRequiresConsole,
+  encodeControlFrame,
+  keyToKeysym,
+  nextSentAtNs,
+} from "./agent-protocol.ts";
+
+describe("agent frame codec", () => {
+  it("round-trips a control envelope with exact framing", () => {
+    const env = controlEnvelope("sess-1", 2, 123, "attach", { ticket: {} });
+    const frame = encodeControlFrame(env);
+    assert.equal(frame[0], 0x00);
+    const decoded = decodeFrame(frame);
+    assert.ok(decoded);
+    assert.equal(decoded.tag, 0x00);
+    const body = JSON.parse(new TextDecoder().decode(decoded.body));
+    assert.equal(body.type, "attach");
+    assert.equal(body.sessionId, "sess-1");
+    assert.equal(body.sequence, 2);
+  });
+
+  it("rejects bad tags, empty bodies and truncated frames", () => {
+    assert.equal(decodeFrame(new Uint8Array([0x09, 0, 0, 0, 1, 9])), null);
+    assert.equal(decodeFrame(new Uint8Array([0x00, 0, 0, 0, 0])), null);
+    assert.equal(decodeFrame(new Uint8Array([0x00, 0, 0, 0, 10, 1, 2])), null);
+    assert.equal(decodeFrame(new Uint8Array([0x00, 0, 0])), null);
+  });
+
+  it("keeps the (generation, sentAtNs) fence monotonic", () => {
+    const first = nextSentAtNs(0);
+    assert.ok(first > 0);
+    const second = nextSentAtNs(first);
+    assert.ok(second > first);
+  });
+});
+
+describe("annex-b idr detection", () => {
+  it("finds an IDR NAL and ignores non-IDR slices", () => {
+    const idr = new Uint8Array([0, 0, 0, 1, 0x65, 1, 2, 3]);
+    const delta = new Uint8Array([0, 0, 0, 1, 0x41, 1, 2, 3]);
+    assert.equal(annexBHasIdr(idr), true);
+    assert.equal(annexBHasIdr(delta), false);
+    assert.equal(annexBHasIdr(new Uint8Array([1, 2, 3])), false);
+  });
+});
+
+describe("resize clamp", () => {
+  it("clamps to the guest-accepted range", () => {
+    assert.deepEqual(clampResizeSize(1920.7, 1080.2), { width: 1920, height: 1080 });
+    assert.deepEqual(clampResizeSize(100, 100), { width: 320, height: 200 });
+    assert.deepEqual(clampResizeSize(20000, 20000), { width: 8192, height: 8192 });
+  });
+});
+
+describe("desktop handoff policy", () => {
+  const payload = (reason) => ({ session: { desktop: { requiresConsole: true, reason } } });
+  it("yields at once for the secure desktop", () => {
+    assert.deepEqual(desktopRequiresConsole(payload("protected-desktop"), 0), {
+      required: true,
+      reason: "protected-desktop",
+    });
+  });
+  it("debounces a higher-integrity window", () => {
+    assert.equal(desktopRequiresConsole(payload("higher-integrity-window"), 1).required, false);
+    assert.equal(desktopRequiresConsole(payload("higher-integrity-window"), 2).required, true);
+  });
+  it("ignores malformed telemetry", () => {
+    assert.equal(desktopRequiresConsole(null, 5).required, false);
+    assert.equal(desktopRequiresConsole({}, 5).required, false);
+  });
+});
+
+describe("keysym mapping", () => {
+  it("maps named and printable keys, rejects the rest", () => {
+    assert.equal(keyToKeysym("Enter"), 0xff0d);
+    assert.equal(keyToKeysym("ArrowLeft"), 0xff51);
+    assert.equal(keyToKeysym("a"), 0x61);
+    assert.equal(keyToKeysym("F1"), 0xffbe);
+    assert.equal(keyToKeysym("F12"), 0xffc9);
+    assert.equal(keyToKeysym("Unidentified"), null);
+  });
+});

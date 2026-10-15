@@ -590,6 +590,35 @@ export async function takeOverVNCConsole(
   return data.wasInUse === true;
 }
 
+// Premium (agent) display seat: the browser display bridge holds the shared
+// Tier 1 claim, so check/take-over mirrors the VNC console gate and always
+// requires explicit user consent — never silent fallback around ownership.
+export async function checkTier1InUse(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/tier1/status?namespace=${namespace}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to check premium display");
+  const data = await res.json();
+  return data.inUse === true;
+}
+
+export async function takeOverTier1(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${name}/tier1/takeover?namespace=${namespace}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to take over premium display");
+  const data = await res.json();
+  return data.wasInUse === true;
+}
+
 // Shared display session API (/v1/workspaces/{name}/display*). A viewer joins
 // via POST join (getting its participant id), attachs its stream to the API's
 // /display/ws WebSocket with ?participant=<id>&role=observer, and drives

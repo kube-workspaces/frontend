@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import { getWorkspace, listImages } from "@/lib/api";
 import { useSerialConsole } from "@/lib/use-serial-console";
 import { useSSHConsole } from "@/lib/use-ssh-console";
+import AgentDisplay from "@/components/agent-display";
 import VncDisplay from "@/components/vnc-display";
 import SSHCredentialForm from "@/components/ssh-credential-form";
 
@@ -45,7 +46,19 @@ function ConsoleContent() {
   const [sshUser, setSshUser] = useState("");
   const [sshPrivateKey, setSshPrivateKey] = useState("");
   const [mode, setMode] = useState<ConsoleMode>(initialMode);
-  const [displayConnected, setDisplayConnected] = useState(false);
+  const [displayKind, setDisplayKind] = useState<"premium" | "console">("console");
+  const displayKindManual = useRef(false);
+  const [premiumConnected, setPremiumConnected] = useState(false);
+  const [vncConnected, setVncConnected] = useState(false);
+  const displayConnected = displayKind === "premium" ? premiumConnected : vncConnected;
+
+  // Windows guests default to the premium agent viewer; every other VM keeps
+  // the console VNC path until the user explicitly chooses premium.
+  useEffect(() => {
+    if (workspaceLoaded && windowsGuest && !displayKindManual.current) {
+      setDisplayKind("premium");
+    }
+  }, [workspaceLoaded, windowsGuest]);
 
   // VM workspaces expose a graphical VNC display alongside the serial console;
   // container/scratch workspaces only have a terminal. The image's default user
@@ -192,11 +205,46 @@ function ConsoleContent() {
       {/* Terminal / Display */}
       <div className="flex-1 relative overflow-hidden">
         {mode === "display" ? (
-          <VncDisplay
-            workspaceName={name}
-            namespace={namespace}
-            onConnectionChange={setDisplayConnected}
-          />
+          <div className="absolute inset-0 flex flex-col">
+            <div className="flex items-center gap-1 px-2 py-1 bg-[#24283b] border-b border-gray-700 shrink-0">
+              <button
+                onClick={() => { displayKindManual.current = true; setDisplayKind("premium"); }}
+                className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
+                  displayKind === "premium"
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                }`}
+              >
+                Premium
+              </button>
+              <button
+                onClick={() => { displayKindManual.current = true; setDisplayKind("console"); }}
+                className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
+                  displayKind === "console"
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                }`}
+              >
+                Console
+              </button>
+            </div>
+            <div className="flex-1 relative overflow-hidden">
+              {displayKind === "premium" ? (
+                <AgentDisplay
+                  workspaceName={name}
+                  namespace={namespace}
+                  onConnectionChange={setPremiumConnected}
+                  onFallbackToConsole={() => setDisplayKind("console")}
+                />
+              ) : (
+                <VncDisplay
+                  workspaceName={name}
+                  namespace={namespace}
+                  onConnectionChange={setVncConnected}
+                />
+              )}
+            </div>
+          </div>
         ) : (
           <>
             {mode === "ssh" && (!sshUser || !sshPrivateKey) && (
