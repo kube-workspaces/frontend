@@ -213,14 +213,22 @@ export default function AgentDisplay({
         wsRef.current = null;
         stopMedia();
         if (admittedRef.current || everAdmittedRef.current) {
-          // Transport loss after admission: bounded auto-reconnect.
+          // Transport loss after admission: bounded auto-reconnect, mirroring
+          // the native two-attempts-in-ten-seconds budget. An unbounded
+          // retrying tab would squat the exclusive seat forever and fight
+          // every consented takeover from another viewer, so the budget
+          // stops and leaves a manual Reconnect instead.
           admittedRef.current = false;
           notify(false);
           const attempt = reconnectAttemptRef.current + 1;
           reconnectAttemptRef.current = attempt;
           setPhase("degraded");
+          if (attempt > 2) {
+            setError("Agent transport lost — use Reconnect to try again.");
+            return;
+          }
           setError("Agent transport lost — reconnecting…");
-          const delay = Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 15000);
+          const delay = Math.min(1000 * 2 ** (attempt - 1), 4000);
           if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
           reconnectTimerRef.current = window.setTimeout(() => {
             if (!disposedRef.current) dial();
