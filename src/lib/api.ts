@@ -684,7 +684,9 @@ export async function getDisplayStatus(
     credentials: "include",
   });
   if (!res.ok) throw await apiError(res, "Failed to read display session");
-  return res.json();
+  const status: Omit<DisplayStatus, "observers"> & { observers?: DisplayParticipant[] | null } = await res.json();
+  // The API omits empty observer lists (omitempty), including when display is disabled.
+  return { ...status, observers: status.observers ?? [] };
 }
 
 export async function joinDisplay(
