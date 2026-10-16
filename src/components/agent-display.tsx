@@ -205,6 +205,69 @@ export default function AgentDisplay({
     notify(true);
   }, [notify]);
 
+  const setAudioFlag = useCallback((ready: boolean, status: string | null) => {
+    audioReadyRef.current = ready;
+    setAudioReady(ready);
+    setAudioStatus(status);
+  }, []);
+
+  // Builds the Opus decoder (idempotent). Split out of the sound toggle so
+  // a reconnect can rebuild it: the toggle is a user gesture, but the
+  // decoder dies with the transport while the gesture stands.
+  const ensureAudioDecoder = useCallback(() => {
+    if (audioDecRef.current || !audioCtxRef.current) return audioDecRef.current !== null;
+    const ctx = audioCtxRef.current;
+    try {
+      const decoder = new AudioDecoder({
+        output: (data) => {
+          try {
+            if (soundQueueRef.current > 32) {
+              data.close();
+              return;
+            }
+            const frames = data.numberOfFrames;
+            const channels = Math.min(data.numberOfChannels, 2);
+            const rate = data.sampleRate;
+            const buffer = ctx.createBuffer(channels, frames, rate);
+            for (let ch = 0; ch < channels; ch++) {
+              const dest = new Float32Array(frames);
+              data.copyTo(dest, { planeIndex: ch, format: "f32-planar" });
+              buffer.copyToChannel(dest, ch, 0);
+            }
+            const src = ctx.createBufferSource();
+            src.buffer = buffer;
+            src.connect(ctx.destination);
+            soundQueueRef.current += 1;
+            src.onended = () => {
+              soundQueueRef.current = Math.max(0, soundQueueRef.current - 1);
+            };
+            src.start();
+            setAudioFlag(true, null);
+          } finally {
+            data.close();
+          }
+        },
+        error: (e) => {
+          const detail = e instanceof DOMException ? `${e.name}: ${e.message}` : String(e);
+          setAudioFlag(false, `Audio unavailable (${detail})`);
+        },
+      });
+      // Raw guest Opus packets carry no container: describe the stream or
+      // the decoder stays silent with no error worth showing.
+      decoder.configure({
+        codec: "opus",
+        sampleRate: 48000,
+        numberOfChannels: 2,
+        description: opusHead(),
+      });
+      audioDecRef.current = decoder;
+      return true;
+    } catch (err) {
+      setAudioFlag(false, `Audio unavailable (${err instanceof Error ? err.message : String(err)})`);
+      return false;
+    }
+  }, [setAudioFlag]);
+
   const connect = useCallback(() => {
     const cancelled = { current: false };
     disposedRef.current = false;
@@ -641,69 +704,6 @@ export default function AgentDisplay({
       setTakeoverBusy(false);
     }
   }, [workspaceName, namespace, reconnectNow]);
-
-  const setAudioFlag = useCallback((ready: boolean, status: string | null) => {
-    audioReadyRef.current = ready;
-    setAudioReady(ready);
-    setAudioStatus(status);
-  }, []);
-
-  // Builds the Opus decoder (idempotent). Split out of the sound toggle so
-  // a reconnect can rebuild it: the toggle is a user gesture, but the
-  // decoder dies with the transport while the gesture stands.
-  const ensureAudioDecoder = useCallback(() => {
-    if (audioDecRef.current || !audioCtxRef.current) return audioDecRef.current !== null;
-    const ctx = audioCtxRef.current;
-    try {
-      const decoder = new AudioDecoder({
-        output: (data) => {
-          try {
-            if (soundQueueRef.current > 32) {
-              data.close();
-              return;
-            }
-            const frames = data.numberOfFrames;
-            const channels = Math.min(data.numberOfChannels, 2);
-            const rate = data.sampleRate;
-            const buffer = ctx.createBuffer(channels, frames, rate);
-            for (let ch = 0; ch < channels; ch++) {
-              const dest = new Float32Array(frames);
-              data.copyTo(dest, { planeIndex: ch, format: "f32-planar" });
-              buffer.copyToChannel(dest, ch, 0);
-            }
-            const src = ctx.createBufferSource();
-            src.buffer = buffer;
-            src.connect(ctx.destination);
-            soundQueueRef.current += 1;
-            src.onended = () => {
-              soundQueueRef.current = Math.max(0, soundQueueRef.current - 1);
-            };
-            src.start();
-            setAudioFlag(true, null);
-          } finally {
-            data.close();
-          }
-        },
-        error: (e) => {
-          const detail = e instanceof DOMException ? `${e.name}: ${e.message}` : String(e);
-          setAudioFlag(false, `Audio unavailable (${detail})`);
-        },
-      });
-      // Raw guest Opus packets carry no container: describe the stream or
-      // the decoder stays silent with no error worth showing.
-      decoder.configure({
-        codec: "opus",
-        sampleRate: 48000,
-        numberOfChannels: 2,
-        description: opusHead(),
-      });
-      audioDecRef.current = decoder;
-      return true;
-    } catch (err) {
-      setAudioFlag(false, `Audio unavailable (${err instanceof Error ? err.message : String(err)})`);
-      return false;
-    }
-  }, [setAudioFlag]);
 
   const toggleSound = useCallback(async () => {
     const next = !soundOnRef.current;

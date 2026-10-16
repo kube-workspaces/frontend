@@ -41,6 +41,8 @@ export default function TerminalModal({
   // agent viewer; every other VM defaults to the console VNC path.
   const [displayKind, setDisplayKind] = useState<"premium" | "console">(windowsGuest ? "premium" : "console");
   const displayKindManual = useRef(false);
+  const [premiumConnected, setPremiumConnected] = useState(false);
+  const [vncConnected, setVncConnected] = useState(false);
   // Footer slot for the premium viewer's status widgets (clipboard,
   // resize note, audio state). The viewer portals them here so they never
   // cover the guest. A ref-callback state (no effect) holds the element.
