@@ -69,18 +69,24 @@ export default function TerminalModal({
   // height), so it cannot drive the fit. Pin the area to the last measured
   // display height instead of jumping back to the initial 80vh when
   // switching tabs. The observer only records (never drives layout), so a
-  // pinned area measures itself back and cannot loop.
+  // pinned area measures itself back and cannot loop. Maximized geometry is
+  // never recorded: restoring it later is what produced the very-tall modal.
   const areaRef = useRef<HTMLDivElement>(null);
   const [areaH, setAreaH] = useState(0);
   useEffect(() => {
     const el = areaRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setAreaH(el.clientHeight));
+    const maximized = isMaximized;
+    const ro = new ResizeObserver(() => {
+      if (!maximized) setAreaH(el.clientHeight);
+    });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [isMaximized]);
   const inDisplayFit = mode === "display" && !isMaximized;
-  const pinnedH = videoAspect === null && inDisplayFit && areaH > 200 ? areaH : null;
+  const maxPin = typeof window !== "undefined" ? window.innerHeight * 0.8 - 140 : Infinity;
+  const pinnedH =
+    videoAspect === null && inDisplayFit && areaH > 200 ? Math.min(areaH, Math.max(320, maxPin)) : null;
 
   useEffect(() => {
     if (windowsGuest && !displayKindManual.current) setDisplayKind("premium");
@@ -389,7 +395,7 @@ export default function TerminalModal({
           ref={areaRef}
           className={
             videoAspect !== null || pinnedH !== null
-              ? "flex-none relative overflow-hidden"
+              ? "flex-none relative overflow-hidden min-h-[320px]"
               : "flex-1 relative overflow-hidden"
           }
           style={pinnedH !== null && videoAspect === null ? { height: pinnedH } : undefined}

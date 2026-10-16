@@ -269,13 +269,15 @@ export default function VncDisplay({
       // Request lossless refresh before disconnecting to ensure clean shutdown state (Phase D)
       requestLosslessRefresh().catch(console.error);
 
-      // Only auto-reconnect sessions that actually established once. A connect
-      // that never opened (e.g. another session holds the display, the VM is
-      // stopped) shows the error state instead of churning.
+      // Only auto-reconnect sessions that actually established once, and
+      // only twice: an ever-retrying tab squats the single VNC seat
+      // forever and fights consented takeovers from other viewers. After
+      // the budget the error stands with a manual Reconnect, like premium.
       if (everConnected.current) {
         const attempt = reconnectAttempt.current + 1;
         reconnectAttempt.current = attempt;
-        const delay = Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 15000);
+        if (attempt > 2) return;
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 4000);
         if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
         reconnectTimer.current = window.setTimeout(() => mountRFBRef.current(), delay);
       }
