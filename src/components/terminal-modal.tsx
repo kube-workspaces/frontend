@@ -6,6 +6,7 @@ import { useSerialConsole } from "@/lib/use-serial-console";
 import { useSSHConsole } from "@/lib/use-ssh-console";
 import AgentDisplay from "@/components/agent-display";
 import VncDisplay from "@/components/vnc-display";
+import SharedDisplay from "@/components/shared-display";
 import SSHCredentialForm from "@/components/ssh-credential-form";
 import { getDisplayCapability } from "@/lib/api";
 
@@ -39,7 +40,7 @@ export default function TerminalModal({
   const [sshPrivateKey, setSshPrivateKey] = useState("");
   // Shared premium/console selector: Windows guests default to the premium
   // agent viewer; every other VM defaults to the console VNC path.
-  const [displayKind, setDisplayKind] = useState<"premium" | "console">(windowsGuest ? "premium" : "console");
+  const [displayKind, setDisplayKind] = useState<"premium" | "console" | "observe">(windowsGuest ? "premium" : "console");
   const displayKindManual = useRef(false);
   const [premiumConnected, setPremiumConnected] = useState(false);
   const [vncConnected, setVncConnected] = useState(false);
@@ -50,7 +51,9 @@ export default function TerminalModal({
   // Toolbar slot for the viewer controls (sound, fullscreen, connection
   // status), at the right end of the Premium/Console tab row.
   const [toolbarSlot, setToolbarSlot] = useState<HTMLSpanElement | null>(null);
-  const displayConnected = displayKind === "premium" ? premiumConnected : vncConnected;
+  const [observeConnected, setObserveConnected] = useState(false);
+  const displayConnected =
+    displayKind === "premium" ? premiumConnected : displayKind === "observe" ? observeConnected : vncConnected;
   // Live premium video size, for fitting the modal to the video aspect
   // instead of letterboxing it.
   const [premiumVideo, setPremiumVideo] = useState<{ w: number; h: number } | null>(null);
@@ -244,14 +247,13 @@ export default function TerminalModal({
             )}
             {isVM && displayCapable && (
               <button
-                onClick={() =>
-                  window.open(
-                    `/workspaces/${workspaceName}/display?namespace=${namespace}`,
-                    "_blank"
-                  )
-                }
+                onClick={() => {
+                  displayKindManual.current = true;
+                  if (mode !== "display") setMode("display");
+                  setDisplayKind("observe");
+                }}
                 className="px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] hover:bg-gray-700 rounded transition-colors"
-                title="Open shared display (multiple viewers, one controller)"
+                title="Watch the shared console alongside others (VNC framebuffer, not the premium stream)"
               >
                 Shared display
               </button>
@@ -410,6 +412,7 @@ export default function TerminalModal({
                       ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
                       : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
                   }`}
+                  title="Your exclusive premium stream (agent video + audio)"
                 >
                   Premium
                 </button>
@@ -420,8 +423,20 @@ export default function TerminalModal({
                       ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
                       : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
                   }`}
+                  title="Your exclusive console seat (VNC)"
                 >
                   Console
+                </button>
+                <button
+                  onClick={() => { displayKindManual.current = true; setDisplayKind("observe"); }}
+                  className={`px-2.5 py-0.5 text-xs rounded transition-colors ${
+                    displayKind === "observe"
+                      ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                      : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                  }`}
+                  title="Watch the shared console alongside others (VNC framebuffer, not the premium stream). View-only unless you hold control."
+                >
+                  Observe
                 </button>
                 <span ref={setToolbarSlot} className="ml-auto inline-flex items-center gap-2" />
               </div>
@@ -442,6 +457,14 @@ export default function TerminalModal({
                       onVideoSize={(w, h) => setPremiumVideo({ w, h })}
                       toolbarSlot={toolbarSlot}
                       footerSlot={footerSlot}
+                    />
+                  </div>
+                ) : displayKind === "observe" ? (
+                  <div style={{ width: "100%", height: "100%" }}>
+                    <SharedDisplay
+                      workspaceName={workspaceName}
+                      namespace={namespace}
+                      onConnectionChange={setObserveConnected}
                     />
                   </div>
                 ) : (
