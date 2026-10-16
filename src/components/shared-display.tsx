@@ -177,10 +177,14 @@ export default function SharedDisplay({
         return;
       }
       setError(detail?.clean === false ? `Display disconnected: ${reason}`.trim() : "Display disconnected");
+      // Bounded like premium/VNC: an ever-retrying observer squats the
+      // shared seat and fights consented takeovers. After the budget the
+      // error stands with a manual Reconnect.
       if (everConnected.current) {
         const attempt = reconnectAttempt.current + 1;
         reconnectAttempt.current = attempt;
-        const delay = Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 15000);
+        if (attempt > 2) return;
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 4000);
         if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
         reconnectTimer.current = window.setTimeout(() => mountStreamRef.current(), delay);
       }
