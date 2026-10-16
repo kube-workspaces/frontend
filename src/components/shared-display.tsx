@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import RFB from "@novnc/novnc";
 import {
   API_BASE,
@@ -17,6 +18,9 @@ interface SharedDisplayProps {
   workspaceName: string;
   namespace: string;
   onConnectionChange?: (connected: boolean) => void;
+  // Host element for the role/viewer/connection cluster. Portaled into
+  // the modal toolbar when provided, so nothing sits over the guest.
+  toolbarSlot?: HTMLElement | null;
 }
 
 interface StreamIntent {
@@ -36,6 +40,7 @@ export default function SharedDisplay({
   workspaceName,
   namespace,
   onConnectionChange,
+  toolbarSlot = null,
 }: SharedDisplayProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -45,6 +50,7 @@ export default function SharedDisplay({
   const everConnected = useRef(false);
   const reconnectTimer = useRef<number | null>(null);
   const reconnectAttempt = useRef(0);
+  const dropTimesRef = useRef<number[]>([]);
   const mountStreamRef = useRef<() => void>(() => {});
   const manualClose = useRef(false);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -177,17 +183,26 @@ export default function SharedDisplay({
         return;
       }
       setError(detail?.clean === false ? `Display disconnected: ${reason}`.trim() : "Display disconnected");
-      // Bounded like premium/VNC: an ever-retrying observer squats the
-      // shared seat and fights consented takeovers. After the budget the
-      // error stands with a manual Reconnect.
-      if (everConnected.current) {
+      // Flap-proof bound: an attempt counter alone never bites when every
+      // attempt briefly connects (each connect resets it). Bound by a
+      // sliding window instead — three drops in thirty seconds stops the
+      // churn and leaves the reason on screen for diagnosis.
+      const now = Date.now();
+      dropTimesRef.current = [...dropTimesRef.current.filter((t) => now - t < 30000), now];
+      if (everConnected.current && dropTimesRef.current.length <= 3) {
         const attempt = reconnectAttempt.current + 1;
         reconnectAttempt.current = attempt;
-        if (attempt > 2) return;
+        setError(`Display disconnected — reconnecting…${reason ? ` (${reason})` : ""}`);
         const delay = Math.min(1000 * 2 ** (attempt - 1), 4000);
         if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
         reconnectTimer.current = window.setTimeout(() => mountStreamRef.current(), delay);
+        return;
       }
+      setError(
+        detail?.clean === false
+          ? `Display disconnected: ${reason}`.trim() || "Display disconnected"
+          : `${reason ? `Display closed: ${reason}` : "Display disconnected"} (gave up after ${dropTimesRef.current.length} drops)`
+      );
     });
     rfb.addEventListener("disconnect", () => {
       if (pointerHandlerRef.current && container) {
@@ -370,6 +385,46 @@ export default function SharedDisplay({
   const otherController =
     controllerName !== null && controllerName !== participantId;
 
+  const controls = (
+    <>
+      <div className="flex items-center gap-2 bg-black/50 rounded px-2 py-1 backdrop-blur">
+        <span
+          className={`px-2 py-0.5 text-xs rounded font-medium ${
+            amController
+              ? "bg-green-700/80 text-green-100"
+              : "bg-gray-800/80 text-gray-300"
+          }`}
+        >
+          {amController ? "Controller" : "Observer"}
+        </span>
+        <span className="text-xs text-gray-300">
+          {status ? `${status.participants} viewer${status.participants === 1 ? "" : "s"}` : "…"}
+        </span>
+        <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
+      </div>
+      {amController ? (
+        <button
+          onClick={releaseControl}
+          disabled={!isConnected || controlBusy}
+          className="px-3 py-1 text-xs bg-rose-700 hover:bg-rose-600 text-white rounded transition-colors disabled:opacity-50"
+        >
+          {controlBusy ? "Releasing…" : "Release control"}
+        </button>
+      ) : (
+        <button
+          onClick={() => {
+            if (otherController) setTakeoverPrompt(true);
+            else requestControl(false);
+          }}
+          disabled={!isConnected || controlBusy}
+          className="px-3 py-1 text-xs bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors disabled:opacity-50"
+        >
+          {controlBusy ? "Requesting…" : "Request control"}
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
       <div
@@ -377,43 +432,11 @@ export default function SharedDisplay({
         className="w-full h-full"
         style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}
       />
-      <div className="absolute top-2 right-3 flex flex-col items-end gap-2 z-10">
-        <div className="flex items-center gap-2 bg-black/50 rounded px-2 py-1 backdrop-blur">
-          <span
-            className={`px-2 py-0.5 text-xs rounded font-medium ${
-              amController
-                ? "bg-green-700/80 text-green-100"
-                : "bg-gray-800/80 text-gray-300"
-            }`}
-          >
-            {amController ? "Controller" : "Observer"}
-          </span>
-          <span className="text-xs text-gray-300">
-            {status ? `${status.participants} viewer${status.participants === 1 ? "" : "s"}` : "…"}
-          </span>
-          <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
-        </div>
-        {amController ? (
-          <button
-            onClick={releaseControl}
-            disabled={!isConnected || controlBusy}
-            className="px-3 py-1 text-xs bg-rose-700 hover:bg-rose-600 text-white rounded transition-colors disabled:opacity-50"
-          >
-            {controlBusy ? "Releasing…" : "Release control"}
-          </button>
-        ) : (
-          <button
-            onClick={() => {
-              if (otherController) setTakeoverPrompt(true);
-              else requestControl(false);
-            }}
-            disabled={!isConnected || controlBusy}
-            className="px-3 py-1 text-xs bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] rounded transition-colors disabled:opacity-50"
-          >
-            {controlBusy ? "Requesting…" : "Request control"}
-          </button>
-        )}
-      </div>
+      {toolbarSlot ? (
+        createPortal(<span className="inline-flex items-center gap-2">{controls}</span>, toolbarSlot)
+      ) : (
+        <div className="absolute top-2 right-3 flex flex-col items-end gap-2 z-10">{controls}</div>
+      )}
 
       {error && !isConnected && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#1a1b26]">

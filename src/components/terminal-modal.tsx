@@ -475,6 +475,7 @@ export default function TerminalModal({
                       workspaceName={workspaceName}
                       namespace={namespace}
                       onConnectionChange={setObserveConnected}
+                      toolbarSlot={toolbarSlot}
                     />
                   </div>
                 ) : (
