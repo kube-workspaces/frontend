@@ -63,12 +63,24 @@ export default function TerminalModal({
   }, []);
   // Fit the modal to the video: area height follows the measured card
   // width at the live video aspect, clamped to a usable band. Otherwise
-  // the fixed 80vh box letterboxes any mode whose aspect differs.
+  // the fixed 80vh box letterboxes any mode whose aspect differs. Every
+  // input is sanity-checked: anything non-finite or absurd disables the
+  // fit and keeps the fixed height rather than collapsing the viewport.
   const fitPremium =
     mode === "display" && displayKind === "premium" && premiumVideo !== null && !isMaximized;
+  const videoAspect =
+    fitPremium && premiumVideo && Number.isFinite(premiumVideo.w) && Number.isFinite(premiumVideo.h) &&
+    premiumVideo.w >= 320 && premiumVideo.h >= 200 && premiumVideo.h / premiumVideo.w > 0.2 &&
+    premiumVideo.h / premiumVideo.w < 5
+      ? premiumVideo.h / premiumVideo.w
+      : null;
   const fitAreaH =
-    fitPremium && premiumVideo && cardW > 0 && typeof window !== "undefined"
-      ? Math.max(240, Math.min((cardW * premiumVideo.h) / premiumVideo.w, window.innerHeight * 0.8 - 140))
+    videoAspect !== null && cardW > 0 && typeof window !== "undefined"
+      ? (() => {
+          const h = cardW * videoAspect;
+          if (!Number.isFinite(h)) return null;
+          return Math.max(320, Math.min(h, window.innerHeight * 0.8 - 140));
+        })()
       : null;
 
   useEffect(() => {
