@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { stringify as yamlStringify } from "yaml";
 import WindowsCredentials from "@/components/windows-credentials";
+import WorkspaceSessions from "@/components/workspace-sessions";
 import {
   getWorkspace,
   getWorkspaceLogs,
@@ -700,6 +701,7 @@ Edit
       />
 
       {isWindows && <WindowsCredentials key={`${workspace.namespace}/${workspace.name}/${workspace.provisioned}`} name={workspace.name} namespace={workspace.namespace} />}
+      {workspace.type === "vm" && <WorkspaceSessions name={workspace.name} namespace={workspace.namespace} />}
       {terminalOpen && workspace && (
         <TerminalModal
           workspaceName={workspace.name}
