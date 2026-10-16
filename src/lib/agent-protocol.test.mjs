@@ -12,6 +12,7 @@ import {
   opusHead,
   playoutNext,
   snapResizeSize,
+  resizeTarget,
 } from "./agent-protocol.ts";
 
 describe("agent frame codec", () => {
@@ -40,6 +41,20 @@ describe("agent frame codec", () => {
     assert.ok(first > 0);
     const second = nextSentAtNs(first);
     assert.ok(second > first);
+  });
+});
+
+describe("manual versus automatic guest resolution", () => {
+  it("keeps a fixed guest-pixel mode through viewport/fullscreen changes", () => {
+    const selected = { width: 1920, height: 1080 };
+    for (const [w, h] of [[640, 480], [2560, 1440], [3840, 2160]]) {
+      assert.deepEqual(resizeTarget(selected, w, h, [selected]), selected);
+    }
+  });
+  it("resumes viewport mode snapping when automatic is selected", () => {
+    const modes = [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }];
+    assert.deepEqual(resizeTarget("auto", 1400, 900, modes), modes[0]);
+    assert.deepEqual(resizeTarget("auto", 2560, 1440, modes), modes[1]);
   });
 });
 

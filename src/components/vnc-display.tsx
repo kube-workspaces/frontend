@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import RFB from "@novnc/novnc";
+import { ConsoleResolutionStatus } from "@/components/guest-resolution-control";
 import { API_BASE, checkVNCConsoleInUse, takeOverVNCConsole } from "@/lib/api";
 import { useAdaptiveQualityController, applyQualitySettings, requestLosslessRefresh } from "@/lib/adaptive-quality-controller";
 
@@ -13,6 +14,7 @@ interface VncDisplayProps {
   workspaceName: string;
   namespace: string;
   onConnectionChange?: (connected: boolean) => void;
+  footerSlot?: HTMLElement | null;
   toolbarSlot: HTMLElement | null;
 }
 
@@ -24,6 +26,7 @@ export default function VncDisplay({
   workspaceName,
   namespace,
   onConnectionChange,
+  footerSlot = null,
   toolbarSlot,
 }: VncDisplayProps) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -429,6 +432,7 @@ export default function VncDisplay({
         className="w-full h-full"
         style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}
       />
+      <ConsoleResolutionStatus target={mountRef} connected={isConnected} footerSlot={footerSlot} />
       {toolbarSlot && createPortal(<div className="inline-flex items-center gap-2">
         <button
           onClick={toggleSound}

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import RFB from "@novnc/novnc";
+import AgentDisplay from "@/components/agent-display";
+import { ConsoleResolutionStatus } from "@/components/guest-resolution-control";
 import {
   API_BASE,
   joinDisplay,
@@ -21,6 +23,7 @@ interface SharedDisplayProps {
   // Host element for the role/viewer/connection cluster. Portaled into
   // the modal toolbar when provided, so nothing sits over the guest.
   toolbarSlot?: HTMLElement | null;
+  footerSlot?: HTMLElement | null;
 }
 
 interface StreamIntent {
@@ -41,6 +44,34 @@ export default function SharedDisplay({
   namespace,
   onConnectionChange,
   toolbarSlot = null,
+  footerSlot = null,
+}: SharedDisplayProps) {
+  const [transport, setTransport] = useState<"loading" | "agent" | "rfb" | "error">("loading");
+  const [controlling, setControlling] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/v1/workspaces/${encodeURIComponent(workspaceName)}/tier1/status?namespace=${encodeURIComponent(namespace)}`, { credentials: "include", cache: "no-store" });
+        if (!response.ok) throw new Error("Display discovery refused");
+        const status = await response.json();
+        if (!cancelled) setTransport(status.transport === "agent" ? "agent" : "rfb");
+      } catch { if (!cancelled) setTransport("error"); }
+    })();
+    return () => { cancelled = true; };
+  }, [workspaceName, namespace]);
+  if (transport === "loading") return <div className="p-4 text-sm text-gray-400">Discovering shared display…</div>;
+  if (transport === "error") return <div className="p-4 text-sm text-red-400">Unable to discover shared display. Reopen to retry.</div>;
+  if (transport === "agent") return <AgentDisplay key={controlling ? "controller" : "observer"} workspaceName={workspaceName} namespace={namespace} observer={!controlling} onTakeControl={() => setControlling(true)} onConnectionChange={onConnectionChange} toolbarSlot={toolbarSlot} footerSlot={footerSlot} />;
+  return <SharedRFBDisplay workspaceName={workspaceName} namespace={namespace} onConnectionChange={onConnectionChange} toolbarSlot={toolbarSlot} footerSlot={footerSlot} />;
+}
+
+function SharedRFBDisplay({
+  workspaceName,
+  namespace,
+  onConnectionChange,
+  toolbarSlot = null,
+  footerSlot = null,
 }: SharedDisplayProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -437,6 +468,7 @@ export default function SharedDisplay({
       ) : (
         <div className="absolute top-2 right-3 flex flex-col items-end gap-2 z-10">{controls}</div>
       )}
+      <ConsoleResolutionStatus target={mountRef} connected={isConnected} observer={!amController} footerSlot={footerSlot} />
 
       {error && !isConnected && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#1a1b26]">

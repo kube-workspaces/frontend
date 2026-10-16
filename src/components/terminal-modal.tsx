@@ -476,6 +476,7 @@ export default function TerminalModal({
                       namespace={namespace}
                       onConnectionChange={setObserveConnected}
                       toolbarSlot={toolbarSlot}
+                      footerSlot={footerSlot}
                     />
                   </div>
                 ) : (
@@ -483,6 +484,7 @@ export default function TerminalModal({
                     workspaceName={workspaceName}
                     namespace={namespace}
                     onConnectionChange={setVncConnected}
+                    footerSlot={footerSlot}
                     toolbarSlot={toolbarSlot}
                   />
                 )}

@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { checkTier1InUse, takeOverTier1 } from "@/lib/api";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import GuestResolutionControl from "@/components/guest-resolution-control";
+import type { ResolutionPolicy } from "@/lib/agent-protocol";
+import { initialResolution, resolutionReducer, sameMode } from "@/lib/guest-resolution";
+import { checkTier1InUse, getDisplayStatus, takeOverTier1 } from "@/lib/api";
 import { createPortal } from "react-dom";
 import {
   annexBHasIdr,
-  clampResizeSize,
   controlEnvelope,
   decodeFrame,
   desktopRequiresConsole,
@@ -15,11 +17,13 @@ import {
   opusHead,
   parseControlBody,
   playoutNext,
-  snapResizeSize,
+  resizeTarget,
 } from "@/lib/agent-protocol";
 import type { DisplayMode } from "@/lib/agent-protocol";
 
 interface AgentDisplayProps {
+  observer?: boolean;
+  onTakeControl?: () => void;
   workspaceName: string;
   namespace: string;
   onConnectionChange?: (connected: boolean) => void;
@@ -55,13 +59,13 @@ interface Caps {
   modes: DisplayMode[];
 }
 
-function wsUrlFor(namespace: string, name: string): string {
+function wsUrlFor(namespace: string, name: string, observer: boolean): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   // The agent bridge lives on the proxy service behind the /proxy route on
   // this host (mirroring getProxyUrl). It must never go under API_BASE:
   // /api/* routes to the API service, which 404s the bridge and surfaces
   // as "Agent display disconnected" without ever reaching the guest.
-  return `${protocol}//${window.location.host}/proxy/${namespace}/${name}/agent/?purpose=v1.display`;
+  return `${protocol}//${window.location.host}/proxy/${namespace}/${name}/agent/?purpose=${observer ? "v1.observe" : "v1.display"}`;
 }
 
 // Viewer controls: sound toggle, fullscreen, connection status. Rendered
@@ -107,10 +111,12 @@ function StatusCluster(props: {
 
 // Premium agent viewer over the proxy /agent/ bridge (purpose v1.display).
 // The proxy owns the API grant and substitutes it for our attach; the guest
-// admits exactly one controller. Premium-ready is reported only after guest
+// admits exactly one controller; observers share its encoded output. Premium-ready is reported only after guest
 // admission plus the first presented video frame — connecting state, grant
 // presence and media bytes alone are never shown as ready.
 export default function AgentDisplay({
+  observer = false,
+  onTakeControl,
   workspaceName,
   namespace,
   onConnectionChange,
@@ -137,9 +143,15 @@ export default function AgentDisplay({
   const [takeoverBusy, setTakeoverBusy] = useState(false);
   const [caps, setCaps] = useState<Caps>({ input: false, resize: false, clipboard: false, telemetry: false, captureW: 0, captureH: 0, modes: [] });
   const [deskReason, setDeskReason] = useState<string | null>(null);
-  const [resizeNote, setResizeNote] = useState<string | null>(null);
+  const [resolution, dispatchResolution] = useReducer(resolutionReducer, initialResolution);
+  const resolutionRef = useRef(resolution);
+  resolutionRef.current = resolution;
+  const [resolutionPolicy, setResolutionPolicy] = useState<ResolutionPolicy>("auto");
+  const resolutionPolicyRef = useRef<ResolutionPolicy>("auto");
+  const resizeAckTimerRef = useRef<number | null>(null);
   const [clipText, setClipText] = useState("");
   const [clipNote, setClipNote] = useState<string | null>(null);
+  const [viewerCount, setViewerCount] = useState<number | null>(null);
 
   const notify = useCallback(
     (connected: boolean) => {
@@ -161,6 +173,7 @@ export default function AgentDisplay({
   const disposedRef = useRef(false);
   const everAdmittedRef = useRef(false);
   const reconnectAttemptRef = useRef(0);
+  const dropTimesRef = useRef<number[]>([]);
   const reconnectTimerRef = useRef<number | null>(null);
   const videoDecRef = useRef<VideoDecoder | null>(null);
   const audioDecRef = useRef<AudioDecoder | null>(null);
@@ -182,7 +195,6 @@ export default function AgentDisplay({
   const capsRef = useRef<Caps>({ input: false, resize: false, clipboard: false, telemetry: false, captureW: 0, captureH: 0, modes: [] });
   const telemetryTimerRef = useRef<number | null>(null);
   const hiTicksRef = useRef(0);
-  const pendingResizeRef = useRef<string | null>(null);
   const resizeCounterRef = useRef(0);
   const resizeTimerRef = useRef<number | null>(null);
   const takeoverSeqRef = useRef(0);
@@ -191,6 +203,7 @@ export default function AgentDisplay({
   const soundQueueRef = useRef<number>(0);
 
   const sendControl = useCallback((type: string, payload: Record<string, unknown> = {}) => {
+    if (observer && !["attach", "keyframeRequest", "bye"].includes(type)) return false;
     const ws = wsRef.current;
     const session = sessionRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN || !session) return false;
@@ -203,7 +216,7 @@ export default function AgentDisplay({
     } catch {
       return false;
     }
-  }, []);
+  }, [observer]);
 
   const markPremiumReady = useCallback(() => {
     if (presentedRef.current) return;
@@ -291,6 +304,20 @@ export default function AgentDisplay({
     }
   }, [setAudioFlag]);
 
+  const stopMedia = useCallback(() => {
+    if (telemetryTimerRef.current) {
+      window.clearInterval(telemetryTimerRef.current);
+      telemetryTimerRef.current = null;
+    }
+    try { videoDecRef.current?.close(); } catch { /* ignore */ }
+    videoDecRef.current = null;
+    // The user-gesture AudioContext survives reconnects; decoder state does not.
+    try { audioDecRef.current?.close(); } catch { /* ignore */ }
+    audioDecRef.current = null;
+    soundQueueRef.current = 0;
+    setAudioFlag(false, null);
+  }, [setAudioFlag]);
+
   const connect = useCallback(() => {
     const cancelled = { current: false };
     disposedRef.current = false;
@@ -305,7 +332,7 @@ export default function AgentDisplay({
       (async () => {
         let inUse = false;
         try {
-          inUse = await checkTier1InUse(workspaceName, namespace);
+          inUse = !observer && await checkTier1InUse(workspaceName, namespace);
         } catch {
           inUse = false;
         }
@@ -329,10 +356,13 @@ export default function AgentDisplay({
       setPhase("waiting-hello");
       sessionRef.current = "";
       admittedRef.current = false;
+      pressedRef.current.clear();
+      dispatchResolution({ type: "reset" });
+      if (resizeAckTimerRef.current) window.clearTimeout(resizeAckTimerRef.current);
       seqRef.current = 0;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(wsUrlFor(namespace, workspaceName));
+        ws = new WebSocket(wsUrlFor(namespace, workspaceName, observer));
       } catch {
         if (!cancelled.current) {
           setError("Failed to open the agent bridge");
@@ -344,12 +374,12 @@ export default function AgentDisplay({
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (cancelled.current) return;
+        if (cancelled.current || wsRef.current !== ws) return;
         // The guest speaks first (hello). Nothing to send yet.
       };
 
       ws.onmessage = (event: MessageEvent) => {
-        if (cancelled.current || disposedRef.current) return;
+        if (cancelled.current || disposedRef.current || wsRef.current !== ws) return;
         const data = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : null;
         if (!data) return;
         const frame = decodeFrame(data);
@@ -365,8 +395,11 @@ export default function AgentDisplay({
       };
 
       ws.onclose = () => {
-        if (cancelled.current || disposedRef.current) return;
+        if (cancelled.current || disposedRef.current || wsRef.current !== ws) return;
         wsRef.current = null;
+        presentedRef.current = false;
+        dispatchResolution({ type: "reset" });
+        if (resizeAckTimerRef.current) window.clearTimeout(resizeAckTimerRef.current);
         stopMedia();
         if (admittedRef.current || everAdmittedRef.current) {
           // Transport loss after admission: bounded auto-reconnect, mirroring
@@ -378,8 +411,10 @@ export default function AgentDisplay({
           notify(false);
           const attempt = reconnectAttemptRef.current + 1;
           reconnectAttemptRef.current = attempt;
+          const now = Date.now();
+          dropTimesRef.current = [...dropTimesRef.current.filter((t) => now - t < 30_000), now];
           setPhase("degraded");
-          if (attempt > 2) {
+          if (attempt > 2 || dropTimesRef.current.length > 3) {
             setError("Agent transport lost — use Reconnect to try again.");
             return;
           }
@@ -397,7 +432,7 @@ export default function AgentDisplay({
           // prompt, anything else keeps the disconnected error.
           void checkTier1InUse(workspaceName, namespace).then((held) => {
             if (cancelled.current || disposedRef.current) return;
-            if (held) {
+            if (held && !observer) {
               setTakeoverPrompt(true);
               setError(null);
             }
@@ -408,7 +443,7 @@ export default function AgentDisplay({
       };
 
       ws.onerror = () => {
-        if (cancelled.current) return;
+        if (cancelled.current || wsRef.current !== ws) return;
         // Handshake refusals (409 busy, 503 unconfigured, 401/403) surface
         // as a close without hello; the message stays generic here and the
         // takeover/refusal paths below say what is actually known.
@@ -432,10 +467,10 @@ export default function AgentDisplay({
               .map((m) => ({ width: m.width as number, height: m.height as number }))
           : [];
         const next: Caps = {
-          input: payload.inputAvailable === true,
-          resize: payload.resizeAvailable === true,
-          clipboard: payload.clipboardText === true,
-          telemetry: payload.telemetryAvailable === true,
+          input: !observer && payload.inputAvailable === true,
+          resize: !observer && payload.resizeAvailable === true,
+          clipboard: !observer && payload.clipboardText === true,
+          telemetry: !observer && payload.telemetryAvailable === true,
           captureW: w,
           captureH: h,
           modes,
@@ -473,17 +508,7 @@ export default function AgentDisplay({
       if (msg.type === "resizeAck") {
         const payload = (msg.payload ?? {}) as { requestId?: unknown; reason?: unknown; actual?: unknown };
         const id = typeof payload.requestId === "string" ? payload.requestId : "";
-        if (pendingResizeRef.current && id === pendingResizeRef.current) {
-          pendingResizeRef.current = null;
-          const actual = payload.actual as { width?: unknown; height?: unknown } | undefined;
-          if (actual && typeof actual.width === "number" && typeof actual.height === "number") {
-            setResizeNote(`Guest mode ${actual.width}×${actual.height}`);
-          } else if (typeof payload.reason === "string" && payload.reason) {
-            setResizeNote(`Resize not applied (${payload.reason})`);
-          } else {
-            setResizeNote(null);
-          }
-        }
+        dispatchResolution({ type: "ack", id, actual: payload.actual, reason: payload.reason });
         return;
       }
       if (msg.type === "telemetry") {
@@ -527,6 +552,8 @@ export default function AgentDisplay({
           const decoder = new VideoDecoder({
             output: (frame) => {
               try {
+                if (cancelled.current || disposedRef.current || videoDecRef.current !== decoder) return;
+                dispatchResolution({ type: "frame", size: { width: frame.displayWidth, height: frame.displayHeight } });
                 const canvas = canvasRef.current;
                 if (canvas) {
                   if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
@@ -604,25 +631,11 @@ export default function AgentDisplay({
       }, 1000);
     };
 
-    const stopMedia = () => {
-      if (telemetryTimerRef.current) {
-        window.clearInterval(telemetryTimerRef.current);
-        telemetryTimerRef.current = null;
-      }
-      try { videoDecRef.current?.close(); } catch { /* ignore */ }
-      videoDecRef.current = null;
-      // Audio context survives reconnects (user gesture); decoder resets.
-      try { audioDecRef.current?.close(); } catch { /* ignore */ }
-      audioDecRef.current = null;
-      soundQueueRef.current = 0;
-      setAudioFlag(false, null);
-    };
-
     open();
     return () => {
       cancelled.current = true;
     };
-  }, [workspaceName, namespace, sendControl, markPremiumReady, notify, ensureAudioDecoder, setAudioFlag]);
+  }, [workspaceName, namespace, observer, sendControl, markPremiumReady, notify, ensureAudioDecoder, stopMedia]);
 
   useEffect(() => {
     connectFnRef.current = connect;
@@ -648,6 +661,7 @@ export default function AgentDisplay({
       if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
       if (telemetryTimerRef.current) window.clearInterval(telemetryTimerRef.current);
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+      if (resizeAckTimerRef.current) window.clearTimeout(resizeAckTimerRef.current);
       try { videoDecRef.current?.close(); } catch { /* ignore */ }
       try { audioDecRef.current?.close(); } catch { /* ignore */ }
       try { audioCtxRef.current?.close(); } catch { /* ignore */ }
@@ -660,46 +674,76 @@ export default function AgentDisplay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceName, namespace]);
 
-  // Real resize: coalesce (500ms), newest wins; observers only scale locally
-  // (not applicable — premium stays exclusive-controller until W7).
+  // One coalesced path for fixed guest-pixel modes and viewport policy.
+  const scheduleResize = useCallback(() => {
+    if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+    resizeTimerRef.current = window.setTimeout(() => {
+      if (disposedRef.current || !admittedRef.current || !capsRef.current.resize || observer) return;
+      const host = containerRef.current;
+      if (!host || host.clientWidth <= 0 || host.clientHeight <= 0) return;
+      const policy = resolutionPolicyRef.current;
+      const size = resizeTarget(policy, host.clientWidth, host.clientHeight, capsRef.current.modes);
+      const current = resolutionRef.current;
+      if (sameMode(current.pending?.requested, size) || (!current.pending && sameMode(current.actual, size))) return;
+      resizeCounterRef.current += 1;
+      const id = `rs-${resizeCounterRef.current}-${size.width}x${size.height}`;
+      dispatchResolution({ type: "request", id, size });
+      if (resizeAckTimerRef.current) window.clearTimeout(resizeAckTimerRef.current);
+      if (!sendControl("resizeRequest", { requestId: id, width: size.width, height: size.height })) {
+        dispatchResolution({ type: "ack", id, actual: null, reason: "bridge disconnected" });
+        return;
+      }
+      resizeAckTimerRef.current = window.setTimeout(() => dispatchResolution({ type: "timeout", id }), 8000);
+    }, 500);
+  }, [sendControl, observer]);
+
+  const selectResolution = useCallback((policy: ResolutionPolicy) => {
+    resolutionPolicyRef.current = policy;
+    setResolutionPolicy(policy);
+    scheduleResize();
+  }, [scheduleResize]);
+
+  // Fixed modes stay fixed through viewport/fullscreen changes. Observers
+  // retain local scaling and never run a guest resize loop.
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
-      if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
-      resizeTimerRef.current = window.setTimeout(() => {
-        if (disposedRef.current || !admittedRef.current || !capsRef.current.resize) return;
-        const host = containerRef.current;
-        if (!host || host.clientWidth <= 0 || host.clientHeight <= 0) return;
-        // Snap to the guest's advertised OS modes: it exact-tests sizes and
-        // rejects off-list requests (display-mode-unsupported). Without an
-        // advertised list, send the clamped size and report the verdict.
-        const snapped = snapResizeSize(host.clientWidth, host.clientHeight, capsRef.current.modes);
-        const size = snapped ?? clampResizeSize(host.clientWidth, host.clientHeight);
-        resizeCounterRef.current += 1;
-        const id = `rs-${resizeCounterRef.current}-${size.width}x${size.height}`;
-        pendingResizeRef.current = id;
-        sendControl("resizeRequest", { requestId: id, width: size.width, height: size.height });
-      }, 500);
-    });
+    if (!el || observer || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(scheduleResize);
     ro.observe(el);
     return () => {
       ro.disconnect();
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
     };
-  }, [sendControl, phase]);
+  }, [scheduleResize, phase, observer]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const status = await getDisplayStatus(workspaceName, namespace);
+        if (!cancelled) setViewerCount(status.enabled ? status.participants + 1 : null);
+      } catch { if (!cancelled) setViewerCount(null); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [workspaceName, namespace]);
 
   const reconnectNow = useCallback(() => {
     if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
     try { wsRef.current?.close(); } catch { /* ignore */ }
     wsRef.current = null;
+    stopMedia();
     admittedRef.current = false;
+    everAdmittedRef.current = false;
+    reconnectAttemptRef.current = 0;
+    dropTimesRef.current = [];
     presentedRef.current = false;
     hiTicksRef.current = 0;
     setDeskReason(null);
     notify(false);
     connectFnRef.current();
-  }, [notify]);
+  }, [notify, stopMedia]);
 
   const handleTakeover = useCallback(async () => {
     setTakeoverBusy(true);
@@ -932,6 +976,15 @@ export default function AgentDisplay({
     );
   }
 
+  const resolutionControl = <GuestResolutionControl
+    actual={resolution.actual}
+    modes={caps.modes}
+    policy={resolutionPolicy}
+    unavailable={observer ? "View-only: only the active controller can change guest resolution" : !premiumReady ? "Connect to the premium display to change resolution" : !caps.resize ? "Guest display resizing is unavailable" : null}
+    note={resolution.note}
+    onChange={selectResolution}
+  />;
+
   return (
     <div ref={containerRef} className="w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
       <canvas
@@ -957,6 +1010,12 @@ export default function AgentDisplay({
         onToggleSound={() => void toggleSound()}
         onFullscreen={toggleFullscreen}
       />
+      {observer && (
+        <div className="absolute top-2 left-3 z-10 inline-flex items-center gap-2 bg-black/60 rounded px-2 py-1">
+          <span className="text-xs text-gray-300">Premium · View only{viewerCount !== null ? ` · ${viewerCount} viewers` : ""}</span>
+          {onTakeControl && <button onClick={onTakeControl} className="text-xs text-blue-300 hover:underline">Request control…</button>}
+        </div>
+      )}
       {phase === "console-required" && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 max-w-md bg-black/70 rounded px-3 py-2 backdrop-blur text-center">
           <p className="text-xs text-yellow-300">
@@ -999,7 +1058,7 @@ export default function AgentDisplay({
                   </div>
                 </details>
               )}
-              {resizeNote && <span className="text-[11px] text-gray-400">{resizeNote}</span>}
+              {resolutionControl}
               {soundOn && (
                 <span className="text-[11px] text-gray-400">
                   {audioReady ? "Audio on" : audioStatus ?? "Audio starting…"}
@@ -1009,9 +1068,9 @@ export default function AgentDisplay({
             footerSlot
           )
         : null}
-      {!footerSlot && resizeNote && (
+      {!footerSlot && (
         <div className="absolute bottom-3 right-3 z-10 bg-black/50 rounded px-2 py-1 backdrop-blur">
-          <span className="text-[11px] text-gray-400">{resizeNote}</span>
+          {resolutionControl}
         </div>
       )}
       {!footerSlot && caps.clipboard && premiumReady && (

@@ -152,6 +152,13 @@ export interface DisplayMode {
   height: number;
 }
 
+export type ResolutionPolicy = "auto" | DisplayMode;
+
+// Explicit modes are guest pixels, independent of viewport size and DPR.
+export function resizeTarget(policy: ResolutionPolicy, width: number, height: number, modes: DisplayMode[]): DisplayMode {
+  return policy === "auto" ? snapResizeSize(width, height, modes) ?? clampResizeSize(width, height) : { ...policy };
+}
+
 export function snapResizeSize(width: number, height: number, modes: DisplayMode[]): DisplayMode | null {
   const sane = modes.filter((m) =>
     Number.isInteger(m.width) && Number.isInteger(m.height) && m.width >= 320 && m.height >= 200);
