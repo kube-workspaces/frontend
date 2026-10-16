@@ -8,7 +8,6 @@ import AgentDisplay from "@/components/agent-display";
 import VncDisplay from "@/components/vnc-display";
 import SharedDisplay from "@/components/shared-display";
 import SSHCredentialForm from "@/components/ssh-credential-form";
-import { getDisplayCapability } from "@/lib/api";
 
 interface TerminalModalProps {
   workspaceName: string;
@@ -68,12 +67,13 @@ export default function TerminalModal({
     fitPremium && premiumVideo && premiumVideo.w > 0 && premiumVideo.h > 0
       ? `${premiumVideo.w} / ${premiumVideo.h}`
       : null;
-  // Console tab retention: the VNC viewer is percentage-sized (no intrinsic
-  // height), so it cannot drive the fit. Pin the area to the last measured
-  // display height instead of jumping back to the initial 80vh when
-  // switching tabs. The observer only records (never drives layout), so a
-  // pinned area measures itself back and cannot loop. Maximized geometry is
-  // never recorded: restoring it later is what produced the very-tall modal.
+  // Display-area height is deterministic in every display tab. Premium
+  // fits the live video aspect (pure CSS, no measured pixels). Console
+  // and Observe viewers are percentage-sized with no intrinsic height,
+  // so they take an explicit height instead: the last measured area
+  // height, falling back to 60vh on first visit. Nothing here depends on
+  // flex stretching or content intrinsics, so no tab can collapse to zero
+  // or balloon after maximize.
   const areaRef = useRef<HTMLDivElement>(null);
   const [areaH, setAreaH] = useState(0);
   useEffect(() => {
@@ -87,9 +87,11 @@ export default function TerminalModal({
     return () => ro.disconnect();
   }, [isMaximized]);
   const inDisplayFit = mode === "display" && !isMaximized;
-  const maxPin = typeof window !== "undefined" ? window.innerHeight * 0.8 - 140 : Infinity;
-  const pinnedH =
-    videoAspect === null && inDisplayFit && areaH > 200 ? Math.min(areaH, Math.max(320, maxPin)) : null;
+  // Explicit area height for the non-premium tabs (px pin or viewport
+  // fallback). Premium keeps the aspect fit and measures back through
+  // the same observer.
+  const retainH: number | string | null =
+    videoAspect === null && inDisplayFit ? (areaH > 200 ? areaH : "60vh") : null;
 
   useEffect(() => {
     if (windowsGuest && !displayKindManual.current) setDisplayKind("premium");
@@ -119,24 +121,6 @@ export default function TerminalModal({
   });
 
   const { connect, dispose } = serial;
-
-  // The shared display ships opt-in: its entry point only appears when the
-  // platform advertises the capability.
-  const [displayCapable, setDisplayCapable] = useState(false);
-  useEffect(() => {
-    if (!isVM) return;
-    let cancelled = false;
-    getDisplayCapability(workspaceName, namespace)
-      .then((cap) => {
-        if (!cancelled) setDisplayCapable(cap.enabled);
-      })
-      .catch(() => {
-        if (!cancelled) setDisplayCapable(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isVM, workspaceName, namespace]);
 
   useEffect(() => {
     if (mode !== "serial") return;
@@ -213,7 +197,7 @@ export default function TerminalModal({
         } bg-[#1a1b26] border border-gray-700 rounded-lg shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
           isMaximized
             ? "fixed inset-0 rounded-none border-0"
-            : videoAspect !== null || pinnedH !== null
+            : videoAspect !== null || retainH !== null
             ? "w-[90vw] max-w-6xl h-auto max-h-[92vh]"
             : "w-[90vw] h-[80vh] max-w-6xl"
         }`}
@@ -243,19 +227,6 @@ export default function TerminalModal({
                 title="Open graphical display (noVNC)"
               >
                 Display
-              </button>
-            )}
-            {isVM && displayCapable && (
-              <button
-                onClick={() => {
-                  displayKindManual.current = true;
-                  if (mode !== "display") setMode("display");
-                  setDisplayKind("observe");
-                }}
-                className="px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] hover:bg-gray-700 rounded transition-colors"
-                title="Watch the shared console alongside others (VNC framebuffer, not the premium stream)"
-              >
-                Shared display
               </button>
             )}
             {isVM && !windowsGuest && mode === "display" && (
@@ -396,14 +367,18 @@ export default function TerminalModal({
         <div
           ref={areaRef}
           className={
-            videoAspect !== null || pinnedH !== null
+            videoAspect !== null || retainH !== null
               ? "flex-none relative overflow-hidden min-h-[320px]"
               : "flex-1 relative overflow-hidden"
           }
-          style={pinnedH !== null && videoAspect === null ? { height: pinnedH } : undefined}
+          style={
+            retainH !== null && videoAspect === null
+              ? { height: typeof retainH === "number" ? `min(${retainH}px, 80vh)` : retainH }
+              : undefined
+          }
         >
           {mode === "display" ? (
-            <div className={videoAspect !== null || pinnedH !== null ? "relative flex flex-col w-full" : "absolute inset-0 flex flex-col"}>
+            <div className={videoAspect !== null || retainH !== null ? "relative flex flex-col w-full" : "absolute inset-0 flex flex-col"}>
               <div className="flex items-center gap-1 px-2 py-1 bg-[#24283b] border-b border-gray-700 shrink-0">
                 <button
                   onClick={() => { displayKindManual.current = true; setDisplayKind("premium"); }}
@@ -438,6 +413,21 @@ export default function TerminalModal({
                 >
                   Observe
                 </button>
+                {displayKind === "observe" && (
+                  <button
+                    onClick={() =>
+                      window.open(
+                        `/workspaces/${workspaceName}/display?namespace=${namespace}`,
+                        "_blank",
+                        "noopener"
+                      )
+                    }
+                    className="px-2 py-0.5 text-xs rounded transition-colors text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                    title="Break out into its own window (e.g. a second monitor) while you work here"
+                  >
+                    Pop out
+                  </button>
+                )}
                 <span ref={setToolbarSlot} className="ml-auto inline-flex items-center gap-2" />
               </div>
               <div className="flex-1 relative overflow-hidden flex items-center justify-center">
