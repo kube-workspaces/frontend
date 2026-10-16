@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkTier1InUse, takeOverTier1 } from "@/lib/api";
+import { createPortal } from "react-dom";
 import {
   annexBHasIdr,
   clampResizeSize,
@@ -11,6 +12,7 @@ import {
   encodeControlFrame,
   keyToKeysym,
   nextSentAtNs,
+  opusHead,
   parseControlBody,
   snapResizeSize,
 } from "@/lib/agent-protocol";
@@ -24,6 +26,14 @@ interface AgentDisplayProps {
   // Reports the decoded video size whenever it changes, so a host modal
   // can fit itself to the video aspect instead of letterboxing it.
   onVideoSize?: (width: number, height: number) => void;
+  // Host element for the viewer controls (sound, fullscreen, connection
+  // status). Portaled into the modal toolbar when provided, so nothing
+  // sits over the guest; otherwise overlaid top-right as before.
+  toolbarSlot?: HTMLElement | null;
+  // Host element for the status widgets (clipboard, resize note, audio
+  // state). Portaled into the modal footer when provided, so they never
+  // cover the guest; otherwise they overlay the viewer as before.
+  footerSlot?: HTMLElement | null;
 }
 
 type Phase =
@@ -53,6 +63,47 @@ function wsUrlFor(namespace: string, name: string): string {
   return `${protocol}//${window.location.host}/proxy/${namespace}/${name}/agent/?purpose=v1.display`;
 }
 
+// Viewer controls: sound toggle, fullscreen, connection status. Rendered
+// into the host toolbar when a slot is provided, otherwise overlaid
+// top-right of the viewer.
+function StatusCluster(props: {
+  soundOn: boolean;
+  audioReady: boolean;
+  premiumReady: boolean;
+  phase: string;
+  toolbarSlot: HTMLElement | null;
+  onToggleSound: () => void;
+  onFullscreen: () => void;
+}) {
+  const { soundOn, audioReady, premiumReady, phase, toolbarSlot, onToggleSound, onFullscreen } = props;
+  const cluster = (
+    <>
+      <button
+        onClick={onToggleSound}
+        disabled={!premiumReady}
+        title={soundOn ? "Mute audio" : "Enable audio"}
+        className={`px-2.5 py-1 text-xs rounded transition-colors disabled:opacity-40 ${soundOn ? "bg-green-700/80 text-green-100 hover:bg-green-600/80" : "bg-gray-800/80 text-gray-300 hover:bg-gray-700/80"}`}
+      >
+        Sound: {soundOn ? (audioReady ? "On" : "Starting…") : "Off"}
+      </button>
+      <button
+        onClick={onFullscreen}
+        className="px-2.5 py-1 text-xs rounded bg-gray-800/80 text-gray-300 hover:bg-gray-700/80 transition-colors"
+      >
+        Fullscreen
+      </button>
+      <div className={`w-2.5 h-2.5 rounded-full ${premiumReady ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
+      <span className={`text-xs ${premiumReady ? "text-gray-400" : "text-gray-600"}`}>
+        {premiumReady ? "Premium connected" : phase === "admitted" ? "Decoding…" : "Connecting…"}
+      </span>
+    </>
+  );
+  if (toolbarSlot) {
+    return createPortal(<span className="inline-flex items-center gap-2">{cluster}</span>, toolbarSlot);
+  }
+  return <div className="absolute top-2 right-3 flex items-center gap-2 z-10">{cluster}</div>;
+}
+
 // Premium agent viewer over the proxy /agent/ bridge (purpose v1.display).
 // The proxy owns the API grant and substitutes it for our attach; the guest
 // admits exactly one controller. Premium-ready is reported only after guest
@@ -64,6 +115,8 @@ export default function AgentDisplay({
   onConnectionChange,
   onFallbackToConsole,
   onVideoSize,
+  toolbarSlot = null,
+  footerSlot = null,
 }: AgentDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -72,6 +125,11 @@ export default function AgentDisplay({
   const [premiumReady, setPremiumReady] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
+  // Human-readable audio state for the footer slot. The Sound button alone
+  // cannot distinguish "starting", "no packets", and "decoder refused" —
+  // and the decoder error callback used to swallow the reason, leaving
+  // "Starting…" stuck forever.
+  const [audioStatus, setAudioStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [takeoverPrompt, setTakeoverPrompt] = useState(false);
@@ -106,6 +164,8 @@ export default function AgentDisplay({
   const videoDecRef = useRef<VideoDecoder | null>(null);
   const audioDecRef = useRef<AudioDecoder | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioReadyRef = useRef(false);
+  const lastAudioPktRef = useRef(0);
   const videoTsRef = useRef(0);
   const audioTsRef = useRef(0);
   const presentedRef = useRef(false);
@@ -309,6 +369,10 @@ export default function AgentDisplay({
           reconnectAttemptRef.current = 0;
           setPhase("admitted");
           sendControl("keyframeRequest", {});
+          // The decoder dies with the transport while the sound gesture
+          // stands: rebuild it here so audio survives reconnects without
+          // forcing the user through the gesture again.
+          if (soundOnRef.current && audioCtxRef.current) ensureAudioDecoder();
           startTelemetry();
         } else {
           const reason = typeof payload.reason === "string" ? payload.reason : "ticket-refused";
@@ -419,6 +483,7 @@ export default function AgentDisplay({
 
     const handleAudio = async (packet: Uint8Array) => {
       if (!admittedRef.current || !soundOnRef.current) return;
+      lastAudioPktRef.current = Date.now();
       try {
         if (!audioDecRef.current || !audioCtxRef.current) return;
         const decoder = audioDecRef.current;
@@ -455,13 +520,14 @@ export default function AgentDisplay({
       try { audioDecRef.current?.close(); } catch { /* ignore */ }
       audioDecRef.current = null;
       soundQueueRef.current = 0;
+      setAudioFlag(false, null);
     };
 
     open();
     return () => {
       cancelled.current = true;
     };
-  }, [workspaceName, namespace, sendControl, markPremiumReady, notify]);
+  }, [workspaceName, namespace, sendControl, markPremiumReady, notify, ensureAudioDecoder, setAudioFlag]);
 
   useEffect(() => {
     connectFnRef.current = connect;
@@ -576,52 +642,82 @@ export default function AgentDisplay({
     }
   }, [workspaceName, namespace, reconnectNow]);
 
+  const setAudioFlag = useCallback((ready: boolean, status: string | null) => {
+    audioReadyRef.current = ready;
+    setAudioReady(ready);
+    setAudioStatus(status);
+  }, []);
+
+  // Builds the Opus decoder (idempotent). Split out of the sound toggle so
+  // a reconnect can rebuild it: the toggle is a user gesture, but the
+  // decoder dies with the transport while the gesture stands.
+  const ensureAudioDecoder = useCallback(() => {
+    if (audioDecRef.current || !audioCtxRef.current) return audioDecRef.current !== null;
+    const ctx = audioCtxRef.current;
+    try {
+      const decoder = new AudioDecoder({
+        output: (data) => {
+          try {
+            if (soundQueueRef.current > 32) {
+              data.close();
+              return;
+            }
+            const frames = data.numberOfFrames;
+            const channels = Math.min(data.numberOfChannels, 2);
+            const rate = data.sampleRate;
+            const buffer = ctx.createBuffer(channels, frames, rate);
+            for (let ch = 0; ch < channels; ch++) {
+              const dest = new Float32Array(frames);
+              data.copyTo(dest, { planeIndex: ch, format: "f32-planar" });
+              buffer.copyToChannel(dest, ch, 0);
+            }
+            const src = ctx.createBufferSource();
+            src.buffer = buffer;
+            src.connect(ctx.destination);
+            soundQueueRef.current += 1;
+            src.onended = () => {
+              soundQueueRef.current = Math.max(0, soundQueueRef.current - 1);
+            };
+            src.start();
+            setAudioFlag(true, null);
+          } finally {
+            data.close();
+          }
+        },
+        error: (e) => {
+          const detail = e instanceof DOMException ? `${e.name}: ${e.message}` : String(e);
+          setAudioFlag(false, `Audio unavailable (${detail})`);
+        },
+      });
+      // Raw guest Opus packets carry no container: describe the stream or
+      // the decoder stays silent with no error worth showing.
+      decoder.configure({
+        codec: "opus",
+        sampleRate: 48000,
+        numberOfChannels: 2,
+        description: opusHead(),
+      });
+      audioDecRef.current = decoder;
+      return true;
+    } catch (err) {
+      setAudioFlag(false, `Audio unavailable (${err instanceof Error ? err.message : String(err)})`);
+      return false;
+    }
+  }, [setAudioFlag]);
+
   const toggleSound = useCallback(async () => {
     const next = !soundOnRef.current;
     soundOnRef.current = next;
     setSoundOn(next);
-    setAudioReady(false);
+    setAudioFlag(false, null);
+    lastAudioPktRef.current = 0;
     if (next) {
       try {
         if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
         await audioCtxRef.current.resume();
-        if (!audioDecRef.current) {
-          const ctx = audioCtxRef.current;
-          const decoder = new AudioDecoder({
-            output: (data) => {
-              try {
-                if (soundQueueRef.current > 32) {
-                  data.close();
-                  return;
-                }
-                const frames = data.numberOfFrames;
-                const channels = Math.min(data.numberOfChannels, 2);
-                const rate = data.sampleRate;
-                const buffer = ctx.createBuffer(channels, frames, rate);
-                for (let ch = 0; ch < channels; ch++) {
-                  const dest = new Float32Array(frames);
-                  data.copyTo(dest, { planeIndex: ch, format: "f32-planar" });
-                  buffer.copyToChannel(dest, ch, 0);
-                }
-                const src = ctx.createBufferSource();
-                src.buffer = buffer;
-                src.connect(ctx.destination);
-                soundQueueRef.current += 1;
-                src.onended = () => {
-                  soundQueueRef.current = Math.max(0, soundQueueRef.current - 1);
-                };
-                src.start();
-                setAudioReady(true);
-              } finally {
-                data.close();
-              }
-            },
-            error: () => {
-              setAudioReady(false);
-            },
-          });
-          decoder.configure({ codec: "opus", sampleRate: 48000, numberOfChannels: 2 });
-          audioDecRef.current = decoder;
+        if (!ensureAudioDecoder()) {
+          soundOnRef.current = false;
+          setSoundOn(false);
         }
       } catch {
         soundOnRef.current = false;
@@ -632,7 +728,22 @@ export default function AgentDisplay({
       audioDecRef.current = null;
       soundQueueRef.current = 0;
     }
-  }, []);
+  }, [ensureAudioDecoder, setAudioFlag]);
+
+  // No-packet watchdog: "Starting…" must resolve into either playback or
+  // an honest reason, never stick forever. Only polices the starting
+  // phase; once the first buffer plays the flag owns the state.
+  useEffect(() => {
+    if (!soundOn) return;
+    const timer = window.setInterval(() => {
+      if (disposedRef.current) return;
+      if (audioReadyRef.current) return;
+      if (lastAudioPktRef.current === 0 || Date.now() - lastAudioPktRef.current > 8000) {
+        setAudioStatus("Audio: no packets from guest");
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [soundOn]);
 
   const toggleFullscreen = useCallback(() => {
     const el = containerRef.current;
@@ -799,26 +910,15 @@ export default function AgentDisplay({
         onBlur={releaseKeys}
         onContextMenu={(e) => e.preventDefault()}
       />
-      <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
-        <button
-          onClick={toggleSound}
-          disabled={!premiumReady}
-          title={soundOn ? "Mute audio" : "Enable audio"}
-          className={`px-2.5 py-1 text-xs rounded transition-colors disabled:opacity-40 ${soundOn ? "bg-green-700/80 text-green-100 hover:bg-green-600/80" : "bg-gray-800/80 text-gray-300 hover:bg-gray-700/80"}`}
-        >
-          Sound: {soundOn ? (audioReady ? "On" : "Starting…") : "Off"}
-        </button>
-        <button
-          onClick={toggleFullscreen}
-          className="px-2.5 py-1 text-xs rounded bg-gray-800/80 text-gray-300 hover:bg-gray-700/80 transition-colors"
-        >
-          Fullscreen
-        </button>
-        <div className={`w-2.5 h-2.5 rounded-full ${premiumReady ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
-        <span className={`text-xs ${premiumReady ? "text-gray-400" : "text-gray-600"}`}>
-          {premiumReady ? "Premium connected" : phase === "admitted" ? "Decoding…" : "Connecting…"}
-        </span>
-      </div>
+      <StatusCluster
+        soundOn={soundOn}
+        audioReady={audioReady}
+        premiumReady={premiumReady}
+        phase={phase}
+        toolbarSlot={toolbarSlot}
+        onToggleSound={() => void toggleSound()}
+        onFullscreen={toggleFullscreen}
+      />
       {phase === "console-required" && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 max-w-md bg-black/70 rounded px-3 py-2 backdrop-blur text-center">
           <p className="text-xs text-yellow-300">
@@ -837,12 +937,46 @@ export default function AgentDisplay({
           )}
         </div>
       )}
-      {resizeNote && (
+      {footerSlot
+        ? createPortal(
+            <span className="inline-flex items-center gap-3">
+              {caps.clipboard && premiumReady && (
+                <details className="relative">
+                  <summary className="text-[11px] text-gray-400 cursor-pointer hover:text-gray-200">
+                    Clipboard
+                  </summary>
+                  <div className="absolute bottom-full left-0 mb-1 flex flex-col gap-1 w-56 bg-[#1a1b26] border border-gray-700 rounded p-2 shadow-2xl z-50">
+                    <textarea
+                      value={clipText}
+                      onChange={(e) => setClipText(e.target.value)}
+                      rows={2}
+                      className="text-xs bg-gray-900 text-gray-200 rounded p-1"
+                      placeholder="Guest clipboard text"
+                    />
+                    <div className="flex gap-1">
+                      <button onClick={requestClipboard} className="flex-1 px-2 py-0.5 text-[11px] bg-gray-700 hover:bg-gray-600 text-gray-100 rounded">Read</button>
+                      <button onClick={sendClipboard} className="flex-1 px-2 py-0.5 text-[11px] bg-gray-700 hover:bg-gray-600 text-gray-100 rounded">Send</button>
+                    </div>
+                    {clipNote && <span className="text-[11px] text-gray-500">{clipNote}</span>}
+                  </div>
+                </details>
+              )}
+              {resizeNote && <span className="text-[11px] text-gray-400">{resizeNote}</span>}
+              {soundOn && (
+                <span className="text-[11px] text-gray-400">
+                  {audioReady ? "Audio on" : audioStatus ?? "Audio starting…"}
+                </span>
+              )}
+            </span>,
+            footerSlot
+          )
+        : null}
+      {!footerSlot && resizeNote && (
         <div className="absolute bottom-3 right-3 z-10 bg-black/50 rounded px-2 py-1 backdrop-blur">
           <span className="text-[11px] text-gray-400">{resizeNote}</span>
         </div>
       )}
-      {caps.clipboard && premiumReady && (
+      {!footerSlot && caps.clipboard && premiumReady && (
         <details className="absolute bottom-3 left-3 z-10 bg-black/50 rounded px-2 py-1 backdrop-blur">
           <summary className="text-[11px] text-gray-400 cursor-pointer">Clipboard</summary>
           <div className="flex flex-col gap-1 mt-1 w-56">

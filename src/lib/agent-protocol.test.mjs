@@ -9,6 +9,7 @@ import {
   encodeControlFrame,
   keyToKeysym,
   nextSentAtNs,
+  opusHead,
   snapResizeSize,
 } from "./agent-protocol.ts";
 
@@ -75,6 +76,16 @@ describe("resize snap to advertised modes", () => {
   it("returns null without advertised modes", () => {
     assert.equal(snapResizeSize(1920, 1080, []), null);
     assert.equal(snapResizeSize(1920, 1080, [{ width: 0, height: 0 }]), null);
+  });
+});
+
+describe("opus identification header", () => {
+  it("builds a 19-byte OpusHead for 48kHz stereo", () => {
+    const head = opusHead();
+    assert.equal(head.length, 19);
+    assert.equal(new TextDecoder().decode(head.slice(0, 8)), "OpusHead");
+    assert.equal(head[8], 1);
+    assert.equal(head[9], 2);
   });
 });
 

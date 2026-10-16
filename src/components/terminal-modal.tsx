@@ -41,8 +41,13 @@ export default function TerminalModal({
   // agent viewer; every other VM defaults to the console VNC path.
   const [displayKind, setDisplayKind] = useState<"premium" | "console">(windowsGuest ? "premium" : "console");
   const displayKindManual = useRef(false);
-  const [premiumConnected, setPremiumConnected] = useState(false);
-  const [vncConnected, setVncConnected] = useState(false);
+  // Footer slot for the premium viewer's status widgets (clipboard,
+  // resize note, audio state). The viewer portals them here so they never
+  // cover the guest. A ref-callback state (no effect) holds the element.
+  const [footerSlot, setFooterSlot] = useState<HTMLSpanElement | null>(null);
+  // Toolbar slot for the viewer controls (sound, fullscreen, connection
+  // status), at the right end of the Premium/Console tab row.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLSpanElement | null>(null);
   const displayConnected = displayKind === "premium" ? premiumConnected : vncConnected;
   // Live premium video size, for fitting the modal to the video aspect
   // instead of letterboxing it.
@@ -58,6 +63,22 @@ export default function TerminalModal({
     fitPremium && premiumVideo && premiumVideo.w > 0 && premiumVideo.h > 0
       ? `${premiumVideo.w} / ${premiumVideo.h}`
       : null;
+  // Console tab retention: the VNC viewer is percentage-sized (no intrinsic
+  // height), so it cannot drive the fit. Pin the area to the last measured
+  // display height instead of jumping back to the initial 80vh when
+  // switching tabs. The observer only records (never drives layout), so a
+  // pinned area measures itself back and cannot loop.
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [areaH, setAreaH] = useState(0);
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setAreaH(el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const inDisplayFit = mode === "display" && !isMaximized;
+  const pinnedH = videoAspect === null && inDisplayFit && areaH > 200 ? areaH : null;
 
   useEffect(() => {
     if (windowsGuest && !displayKindManual.current) setDisplayKind("premium");
@@ -181,7 +202,7 @@ export default function TerminalModal({
         } bg-[#1a1b26] border border-gray-700 rounded-lg shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
           isMaximized
             ? "fixed inset-0 rounded-none border-0"
-            : videoAspect !== null
+            : videoAspect !== null || pinnedH !== null
             ? "w-[90vw] max-w-6xl h-auto max-h-[92vh]"
             : "w-[90vw] h-[80vh] max-w-6xl"
         }`}
@@ -356,12 +377,23 @@ export default function TerminalModal({
         {/* Terminal / Display area.
             The display column below is absolutely positioned (out of
             flow): the area only ever has height because the card is fixed
-            and flex stretches it. When fitting the modal to the video the
+            and flex stretches it. When fitting the modal to content the
             card goes height-auto, so the column must come back in-flow —
-            otherwise the area collapses to zero and clips everything. */}
-        <div className={videoAspect !== null ? "flex-none relative overflow-hidden" : "flex-1 relative overflow-hidden"}>
+            otherwise the area collapses to zero and clips everything.
+            Premium drives the fit from the live video aspect; the console
+            tab pins the last measured height so switching tabs keeps the
+            modal where it was instead of jumping back to 80vh. */}
+        <div
+          ref={areaRef}
+          className={
+            videoAspect !== null || pinnedH !== null
+              ? "flex-none relative overflow-hidden"
+              : "flex-1 relative overflow-hidden"
+          }
+          style={pinnedH !== null && videoAspect === null ? { height: pinnedH } : undefined}
+        >
           {mode === "display" ? (
-            <div className={videoAspect !== null ? "relative flex flex-col w-full" : "absolute inset-0 flex flex-col"}>
+            <div className={videoAspect !== null || pinnedH !== null ? "relative flex flex-col w-full" : "absolute inset-0 flex flex-col"}>
               <div className="flex items-center gap-1 px-2 py-1 bg-[#24283b] border-b border-gray-700 shrink-0">
                 <button
                   onClick={() => { displayKindManual.current = true; setDisplayKind("premium"); }}
@@ -383,6 +415,7 @@ export default function TerminalModal({
                 >
                   Console
                 </button>
+                <span ref={setToolbarSlot} className="ml-auto inline-flex items-center gap-2" />
               </div>
               <div className="flex-1 relative overflow-hidden flex items-center justify-center">
                 {displayKind === "premium" ? (
@@ -399,6 +432,8 @@ export default function TerminalModal({
                       onConnectionChange={setPremiumConnected}
                       onFallbackToConsole={() => setDisplayKind("console")}
                       onVideoSize={(w, h) => setPremiumVideo({ w, h })}
+                      toolbarSlot={toolbarSlot}
+                      footerSlot={footerSlot}
                     />
                   </div>
                 ) : (
@@ -485,6 +520,7 @@ export default function TerminalModal({
             )}
             {" "}| Ctrl+Esc to close
           </span>
+          <span ref={setFooterSlot} className="inline-flex items-center gap-3" />
           <span>{workspaceName}-0</span>
         </div>
       </div>

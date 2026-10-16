@@ -84,6 +84,22 @@ export function parseControlBody(body: Uint8Array): { type?: string; sessionId?:
   }
 }
 
+// Opus identification header for WebCodecs. The guest ships raw Opus
+// packets (no container); WebCodecs requires the OpusHead description to
+// configure the decoder. 48kHz stereo with the standard 312-sample
+// preskip; a wrong preskip would only trim milliseconds, but a missing
+// header leaves the decoder silent.
+export function opusHead(): Uint8Array {
+  return new Uint8Array([
+    0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, // "OpusHead"
+    0x01, // version
+    0x02, // channels
+    0x38, 0x01, // preskip (312)
+    0x80, 0xbb, 0x00, 0x00, // input sample rate (48000)
+    0x00, 0x00, // output gain
+    0x00, // channel mapping (mono/stereo, no table)
+  ]);
+}
 // Annex-B IDR detection: the guest never labels key vs delta frames, so the
 // viewer derives the VideoDecoder chunk type from the NAL stream. NAL type 5
 // (IDR slice) marks a key frame; types 1 (non-IDR) alone mark delta.
