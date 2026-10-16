@@ -371,14 +371,22 @@ export default function TerminalModal({
               ? "flex-none relative overflow-hidden min-h-[320px]"
               : "flex-1 relative overflow-hidden"
           }
-          style={
-            retainH !== null && videoAspect === null
-              ? { height: typeof retainH === "number" ? `min(${retainH}px, 80vh)` : retainH }
-              : undefined
-          }
         >
           {mode === "display" ? (
-            <div className={videoAspect !== null || retainH !== null ? "relative flex flex-col w-full" : "absolute inset-0 flex flex-col"}>
+            <div
+              className={videoAspect !== null || retainH !== null ? "relative flex flex-col w-full" : "absolute inset-0 flex flex-col"}
+              // The viewers are percentage-sized with no intrinsic height
+              // before they connect, so the column itself carries the
+              // retained height: overlays (takeover prompts, errors) anchor
+              // to something real instead of clipping inside a zero-height
+              // tree. Premium needs none of this (the aspect wrapper is
+              // already definite).
+              style={
+                retainH !== null && videoAspect === null
+                  ? { height: typeof retainH === "number" ? `min(${retainH}px, 80vh)` : retainH }
+                  : undefined
+              }
+            >
               <div className="flex items-center gap-1 px-2 py-1 bg-[#24283b] border-b border-gray-700 shrink-0">
                 <button
                   onClick={() => { displayKindManual.current = true; setDisplayKind("premium"); }}
@@ -417,15 +425,27 @@ export default function TerminalModal({
                   <button
                     onClick={() =>
                       window.open(
-                        `/workspaces/${workspaceName}/display?namespace=${namespace}`,
+                        `/workspaces/${workspaceName}/popout?namespace=${namespace}`,
                         "_blank",
                         "noopener"
                       )
                     }
-                    className="px-2 py-0.5 text-xs rounded transition-colors text-gray-400 hover:text-gray-200 hover:bg-gray-700"
-                    title="Break out into its own window (e.g. a second monitor) while you work here"
+                    className="p-1 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
+                    title="Pop out the observer into its own window (e.g. a second monitor) while you work here"
                   >
-                    Pop out
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
+                      />
+                    </svg>
                   </button>
                 )}
                 <span ref={setToolbarSlot} className="ml-auto inline-flex items-center gap-2" />
