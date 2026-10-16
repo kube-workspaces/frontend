@@ -13,6 +13,8 @@ import {
   playoutNext,
   snapResizeSize,
   resizeTarget,
+  resolutionChoices,
+  RESIZE_CONFIRMATION_TIMEOUT_MS,
 } from "./agent-protocol.ts";
 
 describe("agent frame codec", () => {
@@ -82,9 +84,11 @@ describe("resize snap to advertised modes", () => {
     { width: 1920, height: 1080 },
     { width: 3840, height: 2160 },
   ];
-  it("picks the largest mode that fits the request", () => {
+  it("picks the closest mode, including one slightly larger than the viewport", () => {
     assert.deepEqual(snapResizeSize(2000, 1200, modes), { width: 1920, height: 1080 });
     assert.deepEqual(snapResizeSize(1920, 1080, modes), { width: 1920, height: 1080 });
+    assert.deepEqual(snapResizeSize(1920, 980, modes), { width: 1920, height: 1080 });
+    assert.deepEqual(snapResizeSize(3840, 2010, modes), { width: 3840, height: 2160 });
   });
   it("falls back to the smallest mode when nothing fits", () => {
     assert.deepEqual(snapResizeSize(800, 600, modes), { width: 1280, height: 720 });
@@ -92,6 +96,22 @@ describe("resize snap to advertised modes", () => {
   it("returns null without advertised modes", () => {
     assert.equal(snapResizeSize(1920, 1080, []), null);
     assert.equal(snapResizeSize(1920, 1080, [{ width: 0, height: 0 }]), null);
+  });
+});
+
+describe("fixed-resolution choices and guest resize budget", () => {
+  it("offers additional presets without advertising them as driver-supported", () => {
+    const choices = resolutionChoices([{ width: 1280, height: 720 }, { width: 1280, height: 720 }, { width: 1440, height: 810 }, { width: -1, height: 0 }]);
+    assert.equal(choices.filter((m) => m.width === 1280 && m.height === 720).length, 1);
+    assert.equal(choices.find((m) => m.width === 1280 && m.height === 720).advertised, true);
+    assert.equal(choices.find((m) => m.width === 1440 && m.height === 810).advertised, true);
+    for (const [width, height] of [[1600, 900], [1920, 1200], [2560, 1440], [3440, 1440], [3840, 2160]]) {
+      assert.equal(choices.find((m) => m.width === width && m.height === height).advertised, false);
+    }
+    assert.ok(choices.every((m) => m.width >= 320 && m.height >= 200));
+  });
+  it("covers the guest's maximum 30s resize + 8s grace + 2s reply wait", () => {
+    assert.ok(RESIZE_CONFIRMATION_TIMEOUT_MS > 40_000);
   });
 });
 

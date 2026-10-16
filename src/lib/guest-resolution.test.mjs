@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialResolution, resolutionReducer as reduce } from "./guest-resolution.ts";
+import { guestFrameSize, initialResolution, resolutionReducer as reduce } from "./guest-resolution.ts";
 
 const oldMode = { width: 1280, height: 720 };
 const newMode = { width: 1920, height: 1080 };
@@ -44,4 +44,33 @@ test("clamps, rejection and timeouts preserve actual mode and explain the result
   assert.deepEqual(state.actual, oldMode);
   assert.equal(state.pending, null);
   assert.match(state.note, /timed out/);
+});
+
+test("macroblock padding is cropped only against matching physical guest readback", () => {
+  assert.deepEqual(guestFrameSize({ width: 1920, height: 1088 }, newMode), newMode);
+  assert.deepEqual(guestFrameSize({ width: 1376, height: 768 }, { width: 1366, height: 768 }), { width: 1366, height: 768 });
+  assert.deepEqual(guestFrameSize(newMode, oldMode), newMode);
+  assert.deepEqual(guestFrameSize(oldMode, newMode), oldMode);
+});
+
+test("padded IDR and physical ACK confirm the same resize in either arrival order", () => {
+  for (const frameFirst of [true, false]) {
+    let state = reduce(live(), { type: "request", id: "padded", size: newMode });
+    const ack = { type: "ack", id: "padded", actual: newMode };
+    const frame = { type: "frame", size: { width: 1920, height: 1088 } };
+    state = reduce(state, frameFirst ? frame : ack);
+    state = reduce(state, frameFirst ? ack : frame);
+    assert.deepEqual(state.actual, newMode);
+    assert.equal(state.pending, null);
+    assert.equal(state.note, null);
+  }
+});
+
+test("switching resize policy clears old pending state and ignores its late ACK", () => {
+  let state = reduce(live(), { type: "request", id: "fixed", size: newMode });
+  state = reduce(state, { type: "policy" });
+  assert.deepEqual(state.actual, oldMode);
+  assert.equal(state.pending, null);
+  assert.equal(state.note, null);
+  assert.equal(reduce(state, { type: "ack", id: "fixed", actual: newMode }), state);
 });

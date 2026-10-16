@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { RefObject } from "react";
 import GuestResolutionControl from "@/components/guest-resolution-control";
 import type { ResolutionPolicy } from "@/lib/agent-protocol";
-import { initialResolution, resolutionReducer, sameMode } from "@/lib/guest-resolution";
+import { guestFrameSize, initialResolution, parseGuestMode, resolutionReducer, sameMode } from "@/lib/guest-resolution";
 import { checkTier1InUse, getDisplayStatus, takeOverTier1 } from "@/lib/api";
 import { createPortal } from "react-dom";
 import {
@@ -18,6 +19,7 @@ import {
   parseControlBody,
   playoutNext,
   resizeTarget,
+  RESIZE_CONFIRMATION_TIMEOUT_MS,
 } from "@/lib/agent-protocol";
 import type { DisplayMode } from "@/lib/agent-protocol";
 
@@ -39,6 +41,8 @@ interface AgentDisplayProps {
   // state). Portaled into the modal footer when provided, so they never
   // cover the guest; otherwise they overlay the viewer as before.
   footerSlot?: HTMLElement | null;
+  // Measure the available display area, not an aspect-fitted video wrapper.
+  resizeTargetRef?: RefObject<HTMLDivElement | null>;
 }
 
 type Phase =
@@ -124,6 +128,7 @@ export default function AgentDisplay({
   onVideoSize,
   toolbarSlot = null,
   footerSlot = null,
+  resizeTargetRef,
 }: AgentDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -169,6 +174,7 @@ export default function AgentDisplay({
   const seqRef = useRef(0);
   const sentNsRef = useRef(0);
   const sessionRef = useRef("");
+  const guestModeRef = useRef<DisplayMode | null>(null);
   const admittedRef = useRef(false);
   const disposedRef = useRef(false);
   const everAdmittedRef = useRef(false);
@@ -355,6 +361,7 @@ export default function AgentDisplay({
       if (cancelled.current || disposedRef.current) return;
       setPhase("waiting-hello");
       sessionRef.current = "";
+      guestModeRef.current = null;
       admittedRef.current = false;
       pressedRef.current.clear();
       dispatchResolution({ type: "reset" });
@@ -461,6 +468,7 @@ export default function AgentDisplay({
         const capture = (payload.capture ?? {}) as { width?: unknown; height?: unknown };
         const w = typeof capture.width === "number" ? capture.width : 0;
         const h = typeof capture.height === "number" ? capture.height : 0;
+        guestModeRef.current = parseGuestMode(capture);
         const modes: DisplayMode[] = Array.isArray(payload.displayModes)
           ? (payload.displayModes as { width?: unknown; height?: unknown }[])
               .filter((m) => typeof m.width === "number" && typeof m.height === "number")
@@ -508,6 +516,31 @@ export default function AgentDisplay({
       if (msg.type === "resizeAck") {
         const payload = (msg.payload ?? {}) as { requestId?: unknown; reason?: unknown; actual?: unknown };
         const id = typeof payload.requestId === "string" ? payload.requestId : "";
+        const actual = parseGuestMode(payload.actual);
+        if (actual) {
+          guestModeRef.current = actual;
+          // The new IDR may already be on the canvas when its ACK arrives.
+          // Crop codec padding now, without waiting for another desktop update.
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const delivered = { width: canvas.width, height: canvas.height };
+            const size = guestFrameSize(delivered, actual);
+            if (!sameMode(size, delivered)) {
+              const copy = document.createElement("canvas");
+              copy.width = size.width;
+              copy.height = size.height;
+              const copyContext = copy.getContext("2d");
+              if (copyContext) {
+                copyContext.drawImage(canvas, 0, 0);
+                canvas.width = size.width;
+                canvas.height = size.height;
+                canvas.getContext("2d")?.drawImage(copy, 0, 0);
+                dispatchResolution({ type: "frame", size });
+                onVideoSizeRef.current?.(size.width, size.height);
+              }
+            }
+          }
+        }
         dispatchResolution({ type: "ack", id, actual: payload.actual, reason: payload.reason });
         return;
       }
@@ -553,16 +586,17 @@ export default function AgentDisplay({
             output: (frame) => {
               try {
                 if (cancelled.current || disposedRef.current || videoDecRef.current !== decoder) return;
-                dispatchResolution({ type: "frame", size: { width: frame.displayWidth, height: frame.displayHeight } });
+                const size = guestFrameSize({ width: frame.displayWidth, height: frame.displayHeight }, guestModeRef.current);
+                dispatchResolution({ type: "frame", size });
                 const canvas = canvasRef.current;
                 if (canvas) {
-                  if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-                    canvas.width = frame.displayWidth;
-                    canvas.height = frame.displayHeight;
-                    onVideoSizeRef.current?.(frame.displayWidth, frame.displayHeight);
+                  if (canvas.width !== size.width || canvas.height !== size.height) {
+                    canvas.width = size.width;
+                    canvas.height = size.height;
+                    onVideoSizeRef.current?.(size.width, size.height);
                   }
                   const ctx = canvas.getContext("2d");
-                  ctx?.drawImage(frame, 0, 0);
+                  ctx?.drawImage(frame, 0, 0, size.width, size.height, 0, 0, size.width, size.height);
                 }
                 markPremiumReady();
               } finally {
@@ -679,7 +713,7 @@ export default function AgentDisplay({
     if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
     resizeTimerRef.current = window.setTimeout(() => {
       if (disposedRef.current || !admittedRef.current || !capsRef.current.resize || observer) return;
-      const host = containerRef.current;
+      const host = resizeTargetRef?.current ?? containerRef.current;
       if (!host || host.clientWidth <= 0 || host.clientHeight <= 0) return;
       const policy = resolutionPolicyRef.current;
       const size = resizeTarget(policy, host.clientWidth, host.clientHeight, capsRef.current.modes);
@@ -693,28 +727,33 @@ export default function AgentDisplay({
         dispatchResolution({ type: "ack", id, actual: null, reason: "bridge disconnected" });
         return;
       }
-      resizeAckTimerRef.current = window.setTimeout(() => dispatchResolution({ type: "timeout", id }), 8000);
+      resizeAckTimerRef.current = window.setTimeout(() => dispatchResolution({ type: "timeout", id }), RESIZE_CONFIRMATION_TIMEOUT_MS);
     }, 500);
-  }, [sendControl, observer]);
+  }, [sendControl, observer, resizeTargetRef]);
 
   const selectResolution = useCallback((policy: ResolutionPolicy) => {
     resolutionPolicyRef.current = policy;
     setResolutionPolicy(policy);
+    dispatchResolution({ type: "policy" });
     scheduleResize();
   }, [scheduleResize]);
 
   // Fixed modes stay fixed through viewport/fullscreen changes. Observers
   // retain local scaling and never run a guest resize loop.
   useEffect(() => {
-    const el = containerRef.current;
+    const el = resizeTargetRef?.current ?? containerRef.current;
     if (!el || observer || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(scheduleResize);
     ro.observe(el);
+    window.addEventListener("resize", scheduleResize);
+    document.addEventListener("fullscreenchange", scheduleResize);
     return () => {
       ro.disconnect();
+      window.removeEventListener("resize", scheduleResize);
+      document.removeEventListener("fullscreenchange", scheduleResize);
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
     };
-  }, [scheduleResize, phase, observer]);
+  }, [scheduleResize, phase, observer, resizeTargetRef]);
 
   useEffect(() => {
     let cancelled = false;

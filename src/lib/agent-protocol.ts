@@ -141,12 +141,10 @@ export function playoutNext(
 }
 
 // Snap a requested size to the guest's advertised OS mode list. The guest
-// tests the exact size (CDS_TEST) and rejects anything outside its discrete
-// modes, so viewers must prefer advertised modes over guessing. Policy:
-// largest mode that fits inside the request (never exceed the viewport);
-// when the request is smaller than every mode, the smallest mode (the
-// guest clamps down rather than failing up). Empty/unknown modes → null
-// and the caller falls back to sending the clamped size as-is.
+// tests the exact size (CDS_TEST) and rejects unsupported requests, so
+// automatic resize prefers advertised modes. Choose the closest
+// dimensions, including a slightly larger mode: browser/modal toolbars must
+// not force a 1080p display back to 720p. Presentation can scale locally.
 export interface DisplayMode {
   width: number;
   height: number;
@@ -154,26 +152,49 @@ export interface DisplayMode {
 
 export type ResolutionPolicy = "auto" | DisplayMode;
 
+const fixedResolutionPresets: DisplayMode[] = [
+  [800, 600], [1024, 768], [1280, 720], [1280, 800], [1280, 960],
+  [1280, 1024], [1366, 768], [1440, 900], [1600, 900], [1600, 1200],
+  [1680, 1050], [1920, 1080], [1920, 1200], [2048, 1152], [2560, 1440],
+  [2560, 1600], [3440, 1440], [3840, 2160],
+].map(([width, height]) => ({ width, height }));
+
+export interface ResolutionChoice extends DisplayMode {
+  advertised: boolean;
+}
+
+function validMode(m: DisplayMode): boolean {
+  return Number.isInteger(m.width) && Number.isInteger(m.height) && m.width >= 320 && m.height >= 200 && m.width <= 8192 && m.height <= 8192;
+}
+
+// Additional presets are requests, not support claims. The existing guest
+// CDS_TEST/apply path remains authoritative and may reject an off-list mode.
+export function resolutionChoices(modes: DisplayMode[]): ResolutionChoice[] {
+  const choices = new Map<string, ResolutionChoice>();
+  for (const m of fixedResolutionPresets) choices.set(`${m.width}x${m.height}`, { ...m, advertised: false });
+  for (const m of modes.filter(validMode)) choices.set(`${m.width}x${m.height}`, { ...m, advertised: true });
+  return [...choices.values()].sort((a, b) => a.width * a.height - b.width * b.height || a.width - b.width);
+}
+
+// The guest allows up to 30s for resize/encoder warmup, 8s IDR grace and 2s
+// for the bridge reply. Leave another 2s for transport rather than timing out
+// an otherwise successful high-resolution mode change at the old 8s limit.
+export const RESIZE_CONFIRMATION_TIMEOUT_MS = 42_000;
+
 // Explicit modes are guest pixels, independent of viewport size and DPR.
 export function resizeTarget(policy: ResolutionPolicy, width: number, height: number, modes: DisplayMode[]): DisplayMode {
   return policy === "auto" ? snapResizeSize(width, height, modes) ?? clampResizeSize(width, height) : { ...policy };
 }
 
 export function snapResizeSize(width: number, height: number, modes: DisplayMode[]): DisplayMode | null {
-  const sane = modes.filter((m) =>
-    Number.isInteger(m.width) && Number.isInteger(m.height) && m.width >= 320 && m.height >= 200);
+  const sane = modes.filter(validMode);
   if (sane.length === 0) return null;
-  const fitting = sane.filter((m) => m.width <= width && m.height <= height);
-  const pool = fitting.length > 0 ? fitting : sane;
-  let best = pool[0];
-  if (fitting.length > 0) {
-    for (const m of pool) {
-      if (m.width * m.height > best.width * best.height) best = m;
-    }
-  } else {
-    for (const m of pool) {
-      if (m.width * m.height < best.width * best.height) best = m;
-    }
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  const distance = (m: DisplayMode) => ((m.width - width) / width) ** 2 + ((m.height - height) / height) ** 2;
+  let best = sane[0];
+  for (const m of sane) {
+    const difference = distance(m) - distance(best);
+    if (difference < -1e-9 || (Math.abs(difference) < 1e-9 && m.width * m.height > best.width * best.height)) best = m;
   }
   return { width: best.width, height: best.height };
 }

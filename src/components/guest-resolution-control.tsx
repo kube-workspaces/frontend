@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { DisplayMode, ResolutionPolicy } from "@/lib/agent-protocol";
+import { resolutionChoices } from "@/lib/agent-protocol";
 
 export default function GuestResolutionControl({ actual, modes, policy, unavailable, note, onChange }: {
   actual: DisplayMode | null;
@@ -14,13 +15,14 @@ export default function GuestResolutionControl({ actual, modes, policy, unavaila
   onChange: (policy: ResolutionPolicy) => void;
 }) {
   const label = actual ? `Guest mode ${actual.width}×${actual.height}` : "Guest mode —";
-  const choices = modes.filter((m, i, all) => Number.isInteger(m.width) && Number.isInteger(m.height) && m.width >= 320 && m.height >= 200 && m.width <= 8192 && m.height <= 8192 && all.findIndex((other) => other.width === m.width && other.height === m.height) === i)
-    .sort((a, b) => a.width * a.height - b.width * b.height);
-  const reason = unavailable ?? (choices.length === 0 ? "The guest does not advertise selectable display modes" : null);
+  const choices = resolutionChoices(modes);
+  const supported = choices.filter((m) => m.advertised);
+  const additional = choices.filter((m) => !m.advertised);
+  const reason = unavailable;
   return <span className="inline-flex items-center gap-2">
     {reason ? <button disabled title={reason} aria-label={`${label}. ${reason}`} className="text-[11px] text-gray-500 cursor-not-allowed">{label}</button> : (
       <details className="relative">
-        <summary className="text-[11px] text-gray-400 cursor-pointer hover:text-gray-200" title="Change the guest's physical display resolution">{label} ▾</summary>
+        <summary className="text-[11px] text-gray-400 cursor-pointer hover:text-gray-200" title="Change the guest's physical display resolution">{label} · {policy === "auto" ? "Auto" : "Fixed"} ▾</summary>
         <div className="absolute bottom-full right-0 mb-1 w-64 bg-[#1a1b26] border border-gray-700 rounded p-3 shadow-2xl z-50">
           <label className="flex flex-col gap-2 text-xs text-gray-300">
             Guest display resolution
@@ -30,12 +32,18 @@ export default function GuestResolutionControl({ actual, modes, policy, unavaila
               const details = event.currentTarget.closest("details");
               if (details) details.open = false;
             }}>
-              <option value="auto">Automatic — match viewport</option>
+              <option value="auto">Automatic — closest guest mode</option>
               {policy !== "auto" && !choices.some((m) => m.width === policy.width && m.height === policy.height) && <option disabled value={`${policy.width}x${policy.height}`}>{policy.width} × {policy.height} (unavailable)</option>}
-              {choices.map((m) => <option key={`${m.width}x${m.height}`} value={`${m.width}x${m.height}`}>{m.width} × {m.height}</option>)}
+              {supported.length > 0 && <optgroup label="Guest-supported modes">
+                {supported.map((m) => <option key={`${m.width}x${m.height}`} value={`${m.width}x${m.height}`}>{m.width} × {m.height}</option>)}
+              </optgroup>}
+              {additional.length > 0 && <optgroup label="Additional presets — guest validates">
+                {additional.map((m) => <option key={`${m.width}x${m.height}`} value={`${m.width}x${m.height}`}>{m.width} × {m.height}</option>)}
+              </optgroup>}
             </select>
           </label>
           <p className="mt-2 text-[11px] text-gray-500">A fixed mode stays selected when this window resizes. The guest view scales to fit.</p>
+          <p className="mt-1 text-[11px] text-gray-500">Automatic chooses the closest supported mode. Additional presets may be rejected by the guest display driver.</p>
         </div>
       </details>
     )}

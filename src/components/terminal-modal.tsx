@@ -75,6 +75,7 @@ export default function TerminalModal({
   // flex stretching or content intrinsics, so no tab can collapse to zero
   // or balloon after maximize.
   const areaRef = useRef<HTMLDivElement>(null);
+  const displayViewportRef = useRef<HTMLDivElement>(null);
   const [areaH, setAreaH] = useState(0);
   useEffect(() => {
     const el = areaRef.current;
@@ -450,7 +451,7 @@ export default function TerminalModal({
                 )}
                 <span ref={setToolbarSlot} className="ml-auto inline-flex items-center gap-2" />
               </div>
-              <div className="flex-1 relative overflow-hidden flex items-center justify-center">
+              <div ref={displayViewportRef} className="flex-1 min-h-0 min-w-0 relative overflow-hidden flex items-center justify-center">
                 {displayKind === "premium" ? (
                   <div
                     style={
@@ -465,6 +466,7 @@ export default function TerminalModal({
                       onConnectionChange={setPremiumConnected}
                       onFallbackToConsole={() => setDisplayKind("console")}
                       onVideoSize={(w, h) => setPremiumVideo({ w, h })}
+                      resizeTargetRef={displayViewportRef}
                       toolbarSlot={toolbarSlot}
                       footerSlot={footerSlot}
                     />
