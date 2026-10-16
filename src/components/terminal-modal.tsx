@@ -44,6 +44,32 @@ export default function TerminalModal({
   const [premiumConnected, setPremiumConnected] = useState(false);
   const [vncConnected, setVncConnected] = useState(false);
   const displayConnected = displayKind === "premium" ? premiumConnected : vncConnected;
+  // Live premium video size, for fitting the modal to the video aspect
+  // instead of letterboxing it. Cleared per workspace; kept across tab
+  // switches so returning to Premium restores the fit instantly.
+  const [premiumVideo, setPremiumVideo] = useState<{ w: number; h: number } | null>(null);
+  // No reset effect on workspace change: the new session's first decoded
+  // frame reports its size within a second and replaces any stale fit.
+  // Modal card width, so the premium viewer area can hug the video aspect.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [cardW, setCardW] = useState(0);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    // The observer fires once on subscribe, so no synchronous measure here.
+    const ro = new ResizeObserver(() => setCardW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Fit the modal to the video: area height follows the measured card
+  // width at the live video aspect, clamped to a usable band. Otherwise
+  // the fixed 80vh box letterboxes any mode whose aspect differs.
+  const fitPremium =
+    mode === "display" && displayKind === "premium" && premiumVideo !== null && !isMaximized;
+  const fitAreaH =
+    fitPremium && premiumVideo && cardW > 0 && typeof window !== "undefined"
+      ? Math.max(240, Math.min((cardW * premiumVideo.h) / premiumVideo.w, window.innerHeight * 0.8 - 140))
+      : null;
 
   useEffect(() => {
     if (windowsGuest && !displayKindManual.current) setDisplayKind("premium");
@@ -162,11 +188,14 @@ export default function TerminalModal({
       }}
     >
       <div
+        ref={cardRef}
         className={`${
           isDocked ? "invisible pointer-events-none" : ""
         } bg-[#1a1b26] border border-gray-700 rounded-lg shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
           isMaximized
             ? "fixed inset-0 rounded-none border-0"
+            : fitAreaH !== null
+            ? "w-[90vw] max-w-6xl h-auto max-h-[92vh]"
             : "w-[90vw] h-[80vh] max-w-6xl"
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -363,13 +392,17 @@ export default function TerminalModal({
                   Console
                 </button>
               </div>
-              <div className="flex-1 relative overflow-hidden">
+              <div
+                className={fitAreaH !== null ? "relative overflow-hidden shrink-0" : "flex-1 relative overflow-hidden"}
+                style={fitAreaH !== null ? { height: fitAreaH } : undefined}
+              >
                 {displayKind === "premium" ? (
                   <AgentDisplay
                     workspaceName={workspaceName}
                     namespace={namespace}
                     onConnectionChange={setPremiumConnected}
                     onFallbackToConsole={() => setDisplayKind("console")}
+                    onVideoSize={(w, h) => setPremiumVideo({ w, h })}
                   />
                 ) : (
                   <VncDisplay

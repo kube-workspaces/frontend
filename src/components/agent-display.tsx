@@ -21,6 +21,9 @@ interface AgentDisplayProps {
   namespace: string;
   onConnectionChange?: (connected: boolean) => void;
   onFallbackToConsole?: () => void;
+  // Reports the decoded video size whenever it changes, so a host modal
+  // can fit itself to the video aspect instead of letterboxing it.
+  onVideoSize?: (width: number, height: number) => void;
 }
 
 type Phase =
@@ -60,6 +63,7 @@ export default function AgentDisplay({
   namespace,
   onConnectionChange,
   onFallbackToConsole,
+  onVideoSize,
 }: AgentDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -85,6 +89,9 @@ export default function AgentDisplay({
     },
     [onConnectionChange]
   );
+  // Ref mirror: the decoder output callback outlives renders.
+  const onVideoSizeRef = useRef(onVideoSize);
+  onVideoSizeRef.current = onVideoSize;
 
   // Session refs (never state: hot read/write paths).
   const wsRef = useRef<WebSocket | null>(null);
@@ -375,6 +382,7 @@ export default function AgentDisplay({
                   if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
                     canvas.width = frame.displayWidth;
                     canvas.height = frame.displayHeight;
+                    onVideoSizeRef.current?.(frame.displayWidth, frame.displayHeight);
                   }
                   const ctx = canvas.getContext("2d");
                   ctx?.drawImage(frame, 0, 0);
