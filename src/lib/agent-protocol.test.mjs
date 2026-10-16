@@ -10,6 +10,7 @@ import {
   keyToKeysym,
   nextSentAtNs,
   opusHead,
+  playoutNext,
   snapResizeSize,
 } from "./agent-protocol.ts";
 
@@ -86,6 +87,20 @@ describe("opus identification header", () => {
     assert.equal(new TextDecoder().decode(head.slice(0, 8)), "OpusHead");
     assert.equal(head[8], 1);
     assert.equal(head[9], 2);
+  });
+});
+
+describe("audio playout scheduling", () => {
+  it("advances the cursor by buffer duration with a lead-in", () => {
+    const first = playoutNext(10, 0, 0.02);
+    assert.equal(first.startAt, 10.05);
+    assert.equal(first.cursor, 10.07);
+    const second = playoutNext(10.01, first.cursor, 0.02);
+    assert.equal(second.startAt, 10.07);
+  });
+  it("resyncs stale backlog instead of playing late", () => {
+    const r = playoutNext(10, 11, 0.02);
+    assert.equal(r.startAt, 10.05);
   });
 });
 

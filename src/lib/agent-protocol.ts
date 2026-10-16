@@ -122,6 +122,24 @@ export function annexBHasIdr(unit: Uint8Array): boolean {
   return false;
 }
 
+// Audio playout scheduling. Packets decoded on arrival must not play on
+// arrival: network jitter becomes audible gaps and overlaps. Each buffer
+// is scheduled at the running playout cursor (now + small lead), and the
+// cursor advances by buffer duration. A cursor more than maxLag ahead of
+// now means stale backlog after a stall: resync instead of playing old
+// audio late.
+export function playoutNext(
+  now: number,
+  cursor: number,
+  duration: number,
+  lead = 0.05,
+  maxLag = 0.5
+): { startAt: number; cursor: number } {
+  let startAt = Math.max(now + lead, cursor);
+  if (startAt - now > maxLag) startAt = now + lead;
+  return { startAt, cursor: startAt + duration };
+}
+
 // Snap a requested size to the guest's advertised OS mode list. The guest
 // tests the exact size (CDS_TEST) and rejects anything outside its discrete
 // modes, so viewers must prefer advertised modes over guessing. Policy:

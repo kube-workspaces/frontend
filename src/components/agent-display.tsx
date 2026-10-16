@@ -14,6 +14,7 @@ import {
   nextSentAtNs,
   opusHead,
   parseControlBody,
+  playoutNext,
   snapResizeSize,
 } from "@/lib/agent-protocol";
 import type { DisplayMode } from "@/lib/agent-protocol";
@@ -166,6 +167,14 @@ export default function AgentDisplay({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioReadyRef = useRef(false);
   const lastAudioPktRef = useRef(0);
+  // Playout + diagnosis: scheduled cursor, packet/decode/drop counters and
+  // an inter-arrival jitter estimate (EWMA against the nominal 20ms cadence).
+  const playCursorRef = useRef(0);
+  const statPktsRef = useRef(0);
+  const statDecRef = useRef(0);
+  const statDropRef = useRef(0);
+  const statJitRef = useRef(0);
+  const audioErrorRef = useRef<string | null>(null);
   const videoTsRef = useRef(0);
   const audioTsRef = useRef(0);
   const presentedRef = useRef(false);
@@ -213,15 +222,20 @@ export default function AgentDisplay({
 
   // Builds the Opus decoder (idempotent). Split out of the sound toggle so
   // a reconnect can rebuild it: the toggle is a user gesture, but the
-  // decoder dies with the transport while the gesture stands.
+  // decoder dies with the transport while the gesture stands. Success marks
+  // the pipeline ready even before the first packet: silence is content,
+  // not failure, and the watchdog below tells the two apart.
   const ensureAudioDecoder = useCallback(() => {
     if (audioDecRef.current || !audioCtxRef.current) return audioDecRef.current !== null;
+    audioErrorRef.current = null;
     const ctx = audioCtxRef.current;
     try {
       const decoder = new AudioDecoder({
         output: (data) => {
           try {
+            statDecRef.current += 1;
             if (soundQueueRef.current > 32) {
+              statDropRef.current += 1;
               data.close();
               return;
             }
@@ -234,6 +248,10 @@ export default function AgentDisplay({
               data.copyTo(dest, { planeIndex: ch, format: "f32-planar" });
               buffer.copyToChannel(dest, ch, 0);
             }
+            // Schedule on the playout cursor, never on arrival: arrival
+            // jitter would otherwise play as gaps and overlaps (crackle).
+            const scheduled = playoutNext(ctx.currentTime, playCursorRef.current, buffer.duration);
+            playCursorRef.current = scheduled.cursor;
             const src = ctx.createBufferSource();
             src.buffer = buffer;
             src.connect(ctx.destination);
@@ -241,7 +259,7 @@ export default function AgentDisplay({
             src.onended = () => {
               soundQueueRef.current = Math.max(0, soundQueueRef.current - 1);
             };
-            src.start();
+            src.start(scheduled.startAt);
             setAudioFlag(true, null);
           } finally {
             data.close();
@@ -249,6 +267,7 @@ export default function AgentDisplay({
         },
         error: (e) => {
           const detail = e instanceof DOMException ? `${e.name}: ${e.message}` : String(e);
+          audioErrorRef.current = detail;
           setAudioFlag(false, `Audio unavailable (${detail})`);
         },
       });
@@ -261,9 +280,13 @@ export default function AgentDisplay({
         description: opusHead(),
       });
       audioDecRef.current = decoder;
+      playCursorRef.current = 0;
+      setAudioFlag(true, null);
       return true;
     } catch (err) {
-      setAudioFlag(false, `Audio unavailable (${err instanceof Error ? err.message : String(err)})`);
+      const detail = err instanceof Error ? err.message : String(err);
+      audioErrorRef.current = detail;
+      setAudioFlag(false, `Audio unavailable (${detail})`);
       return false;
     }
   }, [setAudioFlag]);
@@ -546,11 +569,20 @@ export default function AgentDisplay({
 
     const handleAudio = async (packet: Uint8Array) => {
       if (!admittedRef.current || !soundOnRef.current) return;
-      lastAudioPktRef.current = Date.now();
+      const arrival = Date.now();
+      if (lastAudioPktRef.current !== 0) {
+        const deviation = Math.abs(arrival - lastAudioPktRef.current - 20);
+        statJitRef.current += (deviation - statJitRef.current) * 0.1;
+      }
+      lastAudioPktRef.current = arrival;
+      statPktsRef.current += 1;
       try {
         if (!audioDecRef.current || !audioCtxRef.current) return;
         const decoder = audioDecRef.current;
-        if (decoder.decodeQueueSize > 16) return;
+        if (decoder.decodeQueueSize > 16) {
+          statDropRef.current += 1;
+          return;
+        }
         audioTsRef.current += 20_000;
         decoder.decode(new EncodedAudioChunk({
           type: "key",
@@ -713,7 +745,9 @@ export default function AgentDisplay({
     lastAudioPktRef.current = 0;
     if (next) {
       try {
-        if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new AudioContext({ latencyHint: "playback" });
+        }
         await audioCtxRef.current.resume();
         if (!ensureAudioDecoder()) {
           soundOnRef.current = false;
@@ -730,17 +764,21 @@ export default function AgentDisplay({
     }
   }, [ensureAudioDecoder, setAudioFlag]);
 
-  // No-packet watchdog: "Starting…" must resolve into either playback or
-  // an honest reason, never stick forever. Only polices the starting
-  // phase; once the first buffer plays the flag owns the state.
+  // Audio monitor: composes the footer status every few seconds while
+  // sound is on. "Starting…" must resolve into playback, silence, or an
+  // honest reason — never stick. A surfaced decoder error stands untouched.
   useEffect(() => {
     if (!soundOn) return;
     const timer = window.setInterval(() => {
       if (disposedRef.current) return;
-      if (audioReadyRef.current) return;
-      if (lastAudioPktRef.current === 0 || Date.now() - lastAudioPktRef.current > 8000) {
-        setAudioStatus("Audio: no packets from guest");
-      }
+      if (audioErrorRef.current) return;
+      if (!audioReadyRef.current) return;
+      const silentSec =
+        lastAudioPktRef.current === 0 ? Infinity : (Date.now() - lastAudioPktRef.current) / 1000;
+      const health =
+        `Audio on · ${statPktsRef.current} pkts · jit ${statJitRef.current.toFixed(0)}ms` +
+        ` · drop ${statDropRef.current}`;
+      setAudioStatus(silentSec > 5 ? `${health} (silent ${silentSec.toFixed(0)}s)` : health);
     }, 3000);
     return () => window.clearInterval(timer);
   }, [soundOn]);
