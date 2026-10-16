@@ -483,6 +483,7 @@ export default function TerminalModal({
                     workspaceName={workspaceName}
                     namespace={namespace}
                     onConnectionChange={setVncConnected}
+                    toolbarSlot={toolbarSlot}
                   />
                 )}
               </div>

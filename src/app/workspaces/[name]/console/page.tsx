@@ -50,6 +50,7 @@ function ConsoleContent() {
   const displayKindManual = useRef(false);
   const [premiumConnected, setPremiumConnected] = useState(false);
   const [vncConnected, setVncConnected] = useState(false);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLSpanElement | null>(null);
   const displayConnected = displayKind === "premium" ? premiumConnected : vncConnected;
 
   // Windows guests default to the premium agent viewer; every other VM keeps
@@ -227,6 +228,7 @@ function ConsoleContent() {
               >
                 Console
               </button>
+              <span ref={setToolbarSlot} className="ml-auto inline-flex items-center gap-2" />
             </div>
             <div className="flex-1 relative overflow-hidden">
               {displayKind === "premium" ? (
@@ -235,12 +237,14 @@ function ConsoleContent() {
                   namespace={namespace}
                   onConnectionChange={setPremiumConnected}
                   onFallbackToConsole={() => setDisplayKind("console")}
+                  toolbarSlot={toolbarSlot}
                 />
               ) : (
                 <VncDisplay
                   workspaceName={name}
                   namespace={namespace}
                   onConnectionChange={setVncConnected}
+                  toolbarSlot={toolbarSlot}
                 />
               )}
             </div>

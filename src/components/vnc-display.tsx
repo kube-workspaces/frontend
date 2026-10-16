@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import RFB from "@novnc/novnc";
 import { API_BASE, checkVNCConsoleInUse, takeOverVNCConsole } from "@/lib/api";
 import { useAdaptiveQualityController, applyQualitySettings, requestLosslessRefresh } from "@/lib/adaptive-quality-controller";
@@ -12,6 +13,7 @@ interface VncDisplayProps {
   workspaceName: string;
   namespace: string;
   onConnectionChange?: (connected: boolean) => void;
+  toolbarSlot: HTMLElement | null;
 }
 
 // A noVNC RFB view over the API's /v1/workspaces/{name}/vnc WebSocket bridge.
@@ -22,6 +24,7 @@ export default function VncDisplay({
   workspaceName,
   namespace,
   onConnectionChange,
+  toolbarSlot,
 }: VncDisplayProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -426,7 +429,7 @@ export default function VncDisplay({
         className="w-full h-full"
         style={{ position: "relative", width: "100%", height: "100%", touchAction: "none" }}
       />
-      <div className="absolute top-2 right-3 flex items-center gap-2 z-10">
+      {toolbarSlot && createPortal(<div className="inline-flex items-center gap-2">
         <button
           onClick={toggleSound}
           disabled={!isConnected}
@@ -454,7 +457,7 @@ export default function VncDisplay({
             Tier: {aqc.networkTierIndex ?? 2}
           </div>
         )}
-      </div>
+      </div>, toolbarSlot)}
     </div>
   );
 }
