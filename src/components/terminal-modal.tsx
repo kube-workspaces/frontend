@@ -353,10 +353,15 @@ export default function TerminalModal({
           </div>
         </div>
 
-        {/* Terminal / Display area */}
-        <div className="flex-1 relative overflow-hidden">
+        {/* Terminal / Display area.
+            The display column below is absolutely positioned (out of
+            flow): the area only ever has height because the card is fixed
+            and flex stretches it. When fitting the modal to the video the
+            card goes height-auto, so the column must come back in-flow —
+            otherwise the area collapses to zero and clips everything. */}
+        <div className={videoAspect !== null ? "flex-none relative overflow-hidden" : "flex-1 relative overflow-hidden"}>
           {mode === "display" ? (
-            <div className="absolute inset-0 flex flex-col">
+            <div className={videoAspect !== null ? "relative flex flex-col w-full" : "absolute inset-0 flex flex-col"}>
               <div className="flex items-center gap-1 px-2 py-1 bg-[#24283b] border-b border-gray-700 shrink-0">
                 <button
                   onClick={() => { displayKindManual.current = true; setDisplayKind("premium"); }}
