@@ -426,9 +426,9 @@ export default function TerminalModal({
                   <button
                     onClick={() =>
                       window.open(
-                        `/workspaces/${workspaceName}/popout?namespace=${namespace}`,
+                        `/workspaces/${encodeURIComponent(workspaceName)}/popout?namespace=${encodeURIComponent(namespace)}`,
                         "_blank",
-                        "noopener"
+                        "popup=yes,noopener,width=1280,height=800"
                       )
                     }
                     className="p-1 text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"

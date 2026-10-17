@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Michroma, Exo_2, Rajdhani } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
-import { AuthGate } from "@/components/auth/auth-gate";
-import { NavBar } from "@/components/nav-bar";
-import { MaintenanceBanner } from "@/components/maintenance-banner";
+import { AppShell } from "@/components/app-shell";
 import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
 
 const inter = Inter({
@@ -82,15 +80,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[var(--color-bg-page)] text-[var(--color-text)] font-sans">
         <ServiceWorkerRegistrar />
         <Providers>
-          <NavBar />
-          <main className="flex-1">
-            <div className="max-w-screen-xl mx-auto py-5 px-4 sm:px-6 lg:px-8">
-              <AuthGate>
-                <MaintenanceBanner />
-                {children}
-              </AuthGate>
-            </div>
-          </main>
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>
