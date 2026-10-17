@@ -72,9 +72,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return config as AuthConfig;
       }
     } catch {
-      // Auth config endpoint not available - auth is disabled
-      setAuthConfig({ enabled: false });
+      // Unavailable configuration is not proof that authentication is disabled.
     }
+    setAuthConfig(null);
     return null;
   }, []);
 
@@ -179,7 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = user !== null;
   const isAdmin = user?.role === "admin" || (authConfig !== null && !authConfig.enabled);
-  const authEnabled = authConfig?.enabled ?? false;
+  const authEnabled = authConfig?.enabled ?? true;
 
   return (
     <AuthContext value={{

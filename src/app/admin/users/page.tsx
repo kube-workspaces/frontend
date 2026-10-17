@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { API_BASE } from "@/lib/api";
+import { ExecutionGrantsEditor, type ExecutionGrant } from "@/components/execution-grants-editor";
 
 interface UserCR {
   metadata?: { name: string; creationTimestamp?: string };
@@ -12,6 +13,7 @@ interface UserCR {
     disabled?: boolean;
     groups?: string[];
     namespaceAccess?: Array<{ namespace: string; role: string }>;
+    executionGrants?: ExecutionGrant[];
     localAuth?: {
       enabled: boolean;
       mustChangePassword?: boolean;
@@ -38,6 +40,7 @@ export default function AdminUsersPage() {
   const [createForm, setCreateForm] = useState({ email: "", displayName: "", role: "editor", authMethod: "oidc", password: "" });
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<string | null>(null);
+  const [executionUser, setExecutionUser] = useState<UserCR | null>(null);
   const [namespaces, setNamespaces] = useState<AdminNamespace[]>([]);
   const [editAccess, setEditAccess] = useState<Array<{ namespace: string; role: string }>>([]);
   const [saving, setSaving] = useState(false);
@@ -426,6 +429,12 @@ export default function AdminUsersPage() {
                         >
                           Namespaces
                         </button>
+                        <button
+                          onClick={() => setExecutionUser(user)}
+                          className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-hover)]"
+                        >
+                          VM execution
+                        </button>
                         {user.spec?.localAuth?.enabled && (
                           <button
                             onClick={() => handleResetPassword(user.metadata!.name, user.spec!.email)}
@@ -454,6 +463,17 @@ export default function AdminUsersPage() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {executionUser?.metadata && executionUser.spec && (
+          <ExecutionGrantsEditor
+            key={executionUser.metadata.name}
+            name={executionUser.metadata.name}
+            email={executionUser.spec.email}
+            initialGrants={executionUser.spec.executionGrants || []}
+            onClose={() => setExecutionUser(null)}
+            onSaved={() => { setExecutionUser(null); void fetchUsers(); }}
+          />
         )}
 
         {/* Generated Password Dialog (one-time display) */}
