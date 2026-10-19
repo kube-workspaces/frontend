@@ -74,16 +74,16 @@ export function NavBar() {
   return (
     <nav className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-12">
-          <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2 text-base font-semibold text-[var(--color-text)] tracking-tight">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 lg:h-12 lg:flex-nowrap lg:py-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 lg:gap-8">
+            <Link href="/" className="flex items-center gap-2 whitespace-nowrap text-base font-semibold text-[var(--color-text)] tracking-tight">
               <svg className="w-5 h-5 text-[var(--color-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
               </svg>
               Kube Workspaces
             </Link>
             {showAuthItems && !isLoginPage && (
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 {links.map((link) => (
                   <Link
                     key={link.href}
@@ -102,7 +102,7 @@ export function NavBar() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3">
             {showAuthItems && !isLoginPage && <NamespaceSelector />}
             <ThemePicker />
             {showAuthItems && !isLoginPage && <UserMenu />}

@@ -17,7 +17,10 @@ npm install        # install dependencies
 npm run dev        # dev server (port 3000)
 npm run build      # production build
 npm run lint       # eslint
-npm test           # workspace watch reconnect/fallback acceptance (Node 22+)
+npm test           # Node protocol/watch suite + Vitest unit/component suite (Node 22.18+)
+npm run test:unit   # jsdom/React Testing Library API and page coverage
+npm run test:browser # Playwright PWA/login/routing checks (run build first)
+npm run pwa:screenshots # regenerate public-safe demo install screenshots (run build first)
 ```
 
 ## Key Notes
@@ -31,6 +34,7 @@ npm test           # workspace watch reconnect/fallback acceptance (Node 22+)
 - `server.mjs` (dev) proxies `/api/*`, `/auth/*`, `/proxy/*` to the backend
 - `server-prod.mjs` (prod) handles escaped proxy request recovery and `/api/*` + `/auth/*` WebSocket upgrades
 - Frontend path blocklist in both servers prevents cookie-based escape recovery from hijacking app routes
+- PWA screenshot/static paths must also bypass the Next.js `src/proxy.ts` redirect layer.
 - `NEXT_PUBLIC_API_URL` controls API target (defaults `http://localhost:8090`)
 - Server components use `API_URL` env var for SSR
 - VM console: `src/components/terminal-modal.tsx` toggles serial / SSH / noVNC
@@ -45,5 +49,5 @@ Published to: `ghcr.io/kube-workspaces/frontend`
 
 ## CI
 
-- `.github/workflows/ci.yml` — lint + build
+- `.github/workflows/ci.yml` — lint + Node/Vitest tests + build + Chromium PWA/browser checks
 - `.github/workflows/docker.yml` — build & push Docker image

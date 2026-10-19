@@ -63,6 +63,8 @@ export function proxy(request: NextRequest) {
  */
 function isKubeWorkspacesApiPath(pathname: string): boolean {
   return (
+    ["/manifest.json", "/sw.js", "/icon-192.png", "/icon-512.png", "/icon-maskable.png",
+      "/icon.svg", "/apple-touch-icon.png", "/screenshot-wide.png", "/screenshot-narrow.png"].includes(pathname) ||
     pathname.startsWith("/api/v1/") ||
     pathname.startsWith("/api/admin/") ||
     pathname.startsWith("/api/auth/") ||

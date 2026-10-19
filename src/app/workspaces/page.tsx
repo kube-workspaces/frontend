@@ -464,7 +464,7 @@ function WorkspacesContent() {
       )}
 
       {workspaces.length === 0 ? (
-        <div className="text-center py-12">
+        !error && <div className="text-center py-12">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             No workspaces found. Create one to get started.
           </p>

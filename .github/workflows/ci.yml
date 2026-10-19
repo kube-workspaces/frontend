@@ -31,3 +31,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Install browser test runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser and PWA checks
+        run: npm run test:browser

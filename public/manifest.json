@@ -8,6 +8,22 @@
   "background_color": "#ffffff",
   "theme_color": "#0d9488",
   "orientation": "any",
+  "screenshots": [
+    {
+      "src": "/screenshot-wide.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Manage your development and desktop workspaces"
+    },
+    {
+      "src": "/screenshot-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Browse and connect to workspaces on the go"
+    }
+  ],
   "icons": [
     {
       "src": "/icon-192.png",

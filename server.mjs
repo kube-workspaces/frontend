@@ -107,6 +107,7 @@ const FRONTEND_PATH_PREFIXES = [
   "/images", "/icons",
   "/icon-192.png", "/icon-512.png", "/icon-maskable.png",
   "/icon.svg", "/apple-touch-icon.png",
+  "/screenshot-wide.png", "/screenshot-narrow.png",
 ];
 function isEscapedProxyPath(pathname) {
   if (pathname === "/" || pathname === "") return false;

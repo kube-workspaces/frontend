@@ -60,6 +60,56 @@ npm run dev
 
 Open http://localhost:3000.
 
+### Tests
+
+Use Node.js 22.18 or newer and install the locked dependencies with `npm ci`.
+
+```bash
+npm test                 # existing Node protocol/watch tests + Vitest unit/component tests
+npm run test:node        # protocol codecs, guest resolution, monitoring and watch recovery
+npm run test:unit        # API requests, React workspace pages and adaptive quality
+npm run test:unit -- --watch
+npm run lint
+npm run build
+```
+
+Vitest uses jsdom and React Testing Library. API tests assert session cookies,
+HTTP methods/payloads, error handling and proxy URLs. Workspace list/detail tests
+cover loading, empty/error/recovery states, filtering, navigation and start/refresh.
+The existing Node tests continue to exercise SSE reconnection and polling races.
+CI runs both suites through `npm test` before the production build.
+
+### Browser checks and PWA screenshots
+
+```bash
+npx playwright install --with-deps chromium
+npm run build
+npm run test:browser
+```
+
+The browser suite starts isolated servers on loopback ports 3100–3102 using the
+production build. It exercises the real production wrapper and the development
+wrapper's routing, verifies both manifest screenshot sizes/MIME types and ensures
+workspace proxy cookies/Referer headers cannot redirect PWA screenshot requests.
+CI runs these checks after the production build.
+
+The richer PWA installation previews are `public/screenshot-wide.png` (1920×1080)
+and `public/screenshot-narrow.png` (750×1334). They are captures of the actual UI
+after signing in through a fixture-backed local login: all identities and
+workspace data are demo fixtures, not a live installation. Regenerate and inspect
+them after relevant UI changes:
+
+```bash
+npm run build
+npm run pwa:screenshots
+npm run test:browser
+```
+
+Fixtures live in `tests/fixtures/workspaces.ts`; the login/API stub and capture
+recipe live in `tests/browser/pwa.spec.ts`. Browser tests make no real API calls
+and require no Kubernetes cluster. Regeneration writes only the two public PNGs;
+the normal test command validates committed assets without rewriting them.
+
 ### Pointing to a remote API
 
 Create a `.env.local` file (git-ignored) to proxy requests to a remote API:

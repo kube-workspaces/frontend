@@ -434,7 +434,7 @@ export default function WorkspaceDetailPage() {
   if (!workspace) {
     return (
       <div className="text-center py-12">
-        <p className="text-sm text-gray-500 dark:text-gray-400">Workspace not found.</p>
+        <p role={error ? "alert" : undefined} className="text-sm text-gray-500 dark:text-gray-400">{error || "Workspace not found."}</p>
         <Link href="/workspaces" className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] mt-2 inline-block">
           Back to workspaces
         </Link>
