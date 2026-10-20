@@ -4,6 +4,58 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? (process.env.NEXT_PUBLIC_API_URL).replace(/\/+$/, "")
   : "/api";
 
+export interface ExecutionStatus {
+  enabled: boolean;
+  allow_elevated: boolean;
+  storage_mode: "disabled" | "ephemeral" | "external" | "bundled";
+  durable: boolean;
+  storage_available: boolean;
+  issuer_ready: boolean;
+}
+
+export interface ExecutionCommand {
+  namespace: string;
+  workspace_name: string;
+  executable: string;
+  args: string[];
+  cwd?: string;
+  deadline_seconds: number;
+}
+
+export interface ExecutionCommandResult {
+  execution_id: string;
+  recording_id: string;
+  namespace: string;
+  workspace_name: string;
+  outcome: "succeeded" | "failed" | "timed_out" | "unknown";
+  state: "succeeded" | "failed" | "cancelled" | "timed_out" | "revoked" | "unknown" | "recording_lost";
+  exit_code?: number;
+  stdout?: string;
+  stderr?: string;
+  truncated?: boolean;
+  duration_ms?: number;
+  denial?: string;
+  mode?: string;
+  durability?: "none" | "durable";
+}
+
+export async function getExecutionStatus(signal?: AbortSignal): Promise<ExecutionStatus> {
+  const res = await fetch(`${API_BASE}/v1/executions/status`, { credentials: "include", cache: "no-store", signal });
+  if (!res.ok) throw await apiError(res, "Execution status unavailable");
+  return res.json();
+}
+
+export async function startExecution(command: ExecutionCommand): Promise<ExecutionCommandResult> {
+  // A start is deliberately never retried: losing the HTTP response does not
+  // cancel a command that has already reached the guest.
+  const res = await fetch(`${API_BASE}/v1/executions/start`, {
+    method: "POST", credentials: "include", cache: "no-store",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(command),
+  });
+  if (!res.ok) throw await apiError(res, "Command request failed");
+  return res.json();
+}
+
 export interface DeviceInfo {
   deviceId: string;
   name: string;

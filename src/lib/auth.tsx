@@ -11,6 +11,13 @@ export interface AuthUser {
   personalNamespace?: string;
   avatarURL?: string;
   mustChangePassword?: boolean;
+  executionCredentialBound?: boolean;
+  executionGrants?: {
+    namespace: string;
+    workspaces?: string[];
+    permissions: string[];
+    expiresAt?: string;
+  }[];
 }
 
 export interface AuthConfig {
@@ -95,6 +102,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             personalNamespace: data.personalNamespace,
             avatarURL: data.avatarURL,
             mustChangePassword: data.mustChangePassword,
+            executionCredentialBound: data.executionCredentialBound,
+            executionGrants: data.executionGrants,
           });
           return true;
         }

@@ -8,6 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { stringify as yamlStringify } from "yaml";
 import WindowsCredentials from "@/components/windows-credentials";
 import WorkspaceSessions from "@/components/workspace-sessions";
+import WorkspaceExec from "@/components/workspace-exec";
 import {
   getWorkspace,
   getWorkspaceLogs,
@@ -474,6 +475,7 @@ export default function WorkspaceDetailPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-1">
+          <WorkspaceExec key={`${workspace.namespace}/${workspace.name}`} workspace={workspace} />
           {workspace.type !== "vm" && workspace.ready_replicas > 0 && !workspace.stopped && (
             <a
               href={getConnectUrl()}
