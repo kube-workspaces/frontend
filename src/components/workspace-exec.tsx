@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getExecutionStatus, startExecution, type ExecutionCommandResult, type ExecutionStatus, type Workspace } from "@/lib/api";
+import { ExecutionStartError, getExecutionStatus, startExecution, type ExecutionCommandResult, type ExecutionStatus, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { canExecuteWindowsCommand, decodeExecutionOutput } from "@/lib/execution";
 
@@ -94,8 +94,11 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
       setResult(next);
       if (next.outcome === "unknown" || next.state === "recording_lost") setUncertain(true);
     } catch (err) {
-      setError(`${err instanceof Error ? err.message : "Command response lost"}. The command may have run; inspect execution history before submitting it again.`);
-      setUncertain(true);
+      const notDispatched = err instanceof ExecutionStartError && err.notDispatched;
+      setError(`${err instanceof Error ? err.message : "Command response lost"}. ${notDispatched
+        ? "The command was not dispatched."
+        : "The command may have run; inspect execution history before submitting it again."}`);
+      setUncertain(!notDispatched);
     } finally {
       submitting.current = false; setPending(false);
     }

@@ -77,6 +77,39 @@ describe("workspace Exec", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it.each([400, 401, 403, 404])("reports HTTP %s as a pre-dispatch rejection and permits an explicit retry", async (status) => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready))
+      .mockResolvedValueOnce(Response.json("not an eligible running Windows VM", { status }))
+      .mockResolvedValueOnce(Response.json(result));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={workspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    const run = screen.getByRole("button", { name: "Run as SYSTEM" });
+    await waitFor(() => expect(run).toBeEnabled());
+    fireEvent.click(run);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Command request failed: not an eligible running Windows VM. The command was not dispatched.");
+    expect(screen.queryByText(/The command may have run/)).not.toBeInTheDocument();
+    expect(run).toBeEnabled();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    fireEvent.click(run);
+    expect(await screen.findByText("héllo ✓")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps a server failure uncertain because it can occur after dispatch", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready))
+      .mockResolvedValueOnce(Response.json("execution recording unavailable", { status: 503 }));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={workspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    const run = screen.getByRole("button", { name: "Run as SYSTEM" });
+    await waitFor(() => expect(run).toBeEnabled());
+    fireEvent.click(run);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The command may have run");
+    expect(run).toBeDisabled();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("hides exec without scoped authority and disables it while stopped", () => {
     auth.user = { email: "editor@example.com", role: "editor", executionCredentialBound: true };
     const view = render(<WorkspaceExec workspace={workspace} />);

@@ -45,6 +45,16 @@ export async function getExecutionStatus(signal?: AbortSignal): Promise<Executio
   return res.json();
 }
 
+export class ExecutionStartError extends Error {
+  readonly notDispatched: boolean;
+
+  constructor(message: string, notDispatched: boolean) {
+    super(message);
+    this.name = "ExecutionStartError";
+    this.notDispatched = notDispatched;
+  }
+}
+
 export async function startExecution(command: ExecutionCommand): Promise<ExecutionCommandResult> {
   // A start is deliberately never retried: losing the HTTP response does not
   // cancel a command that has already reached the guest.
@@ -52,7 +62,18 @@ export async function startExecution(command: ExecutionCommand): Promise<Executi
     method: "POST", credentials: "include", cache: "no-store",
     headers: { "Content-Type": "application/json" }, body: JSON.stringify(command),
   });
-  if (!res.ok) throw await apiError(res, "Command request failed");
+  if (!res.ok) {
+    let detail = await res.text().catch(() => "") || res.statusText || String(res.status);
+    try {
+      const body: unknown = JSON.parse(detail);
+      if (typeof body === "string") detail = body;
+      else if (body && typeof body === "object" && "message" in body && typeof body.message === "string") detail = body.message;
+    } catch { /* Keep non-JSON transport errors readable. */ }
+    // The start contract returns these statuses only from validation,
+    // authentication, permission or target-resolution checks before dispatch.
+    // In contrast, a 5xx may follow dispatch (e.g. recording finalization).
+    throw new ExecutionStartError(`Command request failed: ${detail}`, [400, 401, 403, 404].includes(res.status));
+  }
   return res.json();
 }
 
