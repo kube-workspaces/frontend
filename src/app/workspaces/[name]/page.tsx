@@ -77,7 +77,7 @@ export default function WorkspaceDetailPage() {
     memory_request: "512Mi",
     cpu_limit: "2",
     memory_limit: "2Gi",
-    volume_mounts: [] as { name: string; mountPath: string }[],
+    volume_mounts: [] as { name: string; mountPath: string; readonly: boolean }[],
   });
 
   const [cloneOpen, setCloneOpen] = useState(false);
@@ -311,6 +311,7 @@ export default function WorkspaceDetailPage() {
       volume_mounts: (workspace.volume_mounts || []).map((vm) => ({
         name: vm.name,
         mountPath: vm.mount_path,
+        readonly: vm.readonly ?? false,
       })),
     });
     setEditOpen(true);
@@ -366,6 +367,7 @@ export default function WorkspaceDetailPage() {
         volume_mounts: editForm.volume_mounts.map((vm) => ({
           name: vm.name,
           mount_path: vm.mountPath,
+          readonly: vm.readonly,
         })),
       }, namespace);
       setEditOpen(false);
@@ -830,6 +832,7 @@ function OverviewTab({ workspace, images, crData }: { workspace: Workspace; imag
                   <div key={vm.name} className="px-3 py-1.5 flex justify-between text-xs border-b border-gray-100 dark:border-gray-800/50 last:border-0">
                     <Link href={`/volumes/${vm.name}`} className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)]">{vm.name}</Link>
                     <span className="text-gray-500 dark:text-gray-400 font-mono">{vm.mount_path}</span>
+                    <span className="text-gray-500 dark:text-gray-400">{vm.readonly ? "Read-only" : "Writable"}</span>
                   </div>
                 ))}
               </div>
@@ -1866,7 +1869,7 @@ function EditModal({
     memory_request: string;
     cpu_limit: string;
     memory_limit: string;
-    volume_mounts: { name: string; mountPath: string }[];
+    volume_mounts: { name: string; mountPath: string; readonly: boolean }[];
   };
   setForm: (f: typeof form) => void;
   volumes: Volume[];
@@ -1937,7 +1940,7 @@ function EditModal({
               <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Volumes</label>
               <button
                 type="button"
-                onClick={() => setForm({ ...form, volume_mounts: [...form.volume_mounts, { name: "", mountPath: "/data" }] })}
+                onClick={() => setForm({ ...form, volume_mounts: [...form.volume_mounts, { name: "", mountPath: "/data", readonly: false }] })}
                 className="text-[10px] text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium"
               >
                 + Add Volume
@@ -1975,6 +1978,14 @@ function EditModal({
                     className={inputClass}
                   />
                 </div>
+                <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 pb-2">
+                  <input type="checkbox" checked={vm.readonly} onChange={(e) => {
+                    const updated = [...form.volume_mounts];
+                    updated[i] = { ...updated[i], readonly: e.target.checked };
+                    setForm({ ...form, volume_mounts: updated });
+                  }} />
+                  Read-only
+                </label>
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, volume_mounts: form.volume_mounts.filter((_, j) => j !== i) })}

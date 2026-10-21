@@ -244,6 +244,7 @@ export interface WorkspaceCondition {
 export interface VolumeMount {
   name: string;
   mount_path: string;
+  readonly?: boolean;
 }
 
 export type WorkspaceType = "container" | "vm" | "scratch";

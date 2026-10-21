@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "@/lib/api";
 import WorkspacesPage from "@/app/workspaces/page";
 import WorkspaceDetailPage from "@/app/workspaces/[name]/page";
-import { workspaces } from "../fixtures/workspaces";
+import NewWorkspacePage from "@/app/workspaces/new/page";
+import { images, workspaces } from "../fixtures/workspaces";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -17,6 +18,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   watchWorkspaces: vi.fn(), listImages: vi.fn(), getWorkspace: vi.fn(),
   getWorkspacePod: vi.fn(), getWorkspaceCR: vi.fn(), startWorkspace: vi.fn(),
   stopWorkspace: vi.fn(), listWorkspaces: vi.fn(),
+  listVolumes: vi.fn(), listNamespaces: vi.fn(), getPlatformConfig: vi.fn(),
+  createWorkspace: vi.fn(), createVolume: vi.fn(), updateWorkspace: vi.fn(),
 }));
 
 let snapshot: (items: api.Workspace[]) => void;
@@ -34,6 +37,12 @@ beforeEach(() => {
   vi.mocked(api.getWorkspaceCR).mockResolvedValue({});
   vi.mocked(api.getWorkspace).mockResolvedValue(workspaces[0]);
   vi.mocked(api.listWorkspaces).mockResolvedValue(workspaces);
+  vi.mocked(api.listVolumes).mockResolvedValue([]);
+  vi.mocked(api.listNamespaces).mockResolvedValue([{ name: "demo", phase: "Active" }]);
+  vi.mocked(api.getPlatformConfig).mockResolvedValue({ formFieldLocks: [] } as unknown as Awaited<ReturnType<typeof api.getPlatformConfig>>);
+  vi.mocked(api.createWorkspace).mockResolvedValue(workspaces[0]);
+  vi.mocked(api.createVolume).mockResolvedValue({ name: "test-home", namespace: "demo" } as api.Volume);
+  vi.mocked(api.updateWorkspace).mockResolvedValue(workspaces[0]);
 });
 
 describe("workspace list", () => {
@@ -70,6 +79,19 @@ describe("workspace list", () => {
 });
 
 describe("workspace detail", () => {
+  it("preserves a read-only mount on edit and sends explicit false when made writable", async () => {
+    vi.mocked(api.getWorkspace).mockResolvedValue({ ...workspaces[0], volume_mounts: [{ name: "data", mount_path: "/data", readonly: true }] });
+    render(<WorkspaceDetailPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const mode = await screen.findByRole("checkbox", { name: "Read-only" });
+    expect(mode).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(api.updateWorkspace).toHaveBeenCalledWith("code-studio", expect.objectContaining({ volume_mounts: [{ name: "data", mount_path: "/data", readonly: true }] }), "demo"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Read-only" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(api.updateWorkspace).toHaveBeenLastCalledWith("code-studio", expect.objectContaining({ volume_mounts: [{ name: "data", mount_path: "/data", readonly: false }] }), "demo"));
+  });
   it("renders loading followed by the selected workspace and its proxy link", async () => {
     render(<WorkspaceDetailPage />);
     expect(screen.getByText("Loading workspace...")).toBeInTheDocument();
@@ -99,5 +121,28 @@ describe("workspace detail", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start" }));
     await waitFor(() => expect(api.startWorkspace).toHaveBeenCalledWith("code-studio", "demo"));
     expect(await screen.findByRole("link", { name: "Connect" })).toBeInTheDocument();
+  });
+});
+
+describe("workspace volume creation", () => {
+  it.each([false, true])("keeps home writable and submits additional readonly=%s", async (readOnly) => {
+    vi.mocked(api.listImages).mockResolvedValue([{ ...images[0], default_homedir: "/home/coder" }]);
+    render(<NewWorkspacePage />);
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "test" } });
+    const homeMode = screen.getByRole("checkbox", { name: /home volume must be writable/ });
+    expect(homeMode).not.toBeChecked();
+    expect(homeMode).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "+ New Volume" }));
+    const volumeName = screen.getAllByPlaceholderText("my-data")[1];
+    fireEvent.change(volumeName, { target: { value: "extra" } });
+    const extraMode = screen.getByRole("checkbox", { name: "Read-only" });
+    expect(extraMode).not.toBeChecked();
+    if (readOnly) fireEvent.click(extraMode);
+    fireEvent.submit(name.closest("form")!);
+    await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({ volume_mounts: [
+      { name: "test-home", mount_path: "/home/coder", readonly: false },
+      { name: "extra", mount_path: "/data", readonly: readOnly },
+    ] })));
   });
 });

@@ -103,7 +103,7 @@ function NewWorkspaceForm() {
   const [memoryRequest, setMemoryRequest] = useState("512Mi");
   const [cpuLimit, setCpuLimit] = useState("2");
   const [memoryLimit, setMemoryLimit] = useState("2Gi");
-  const [selectedVolumes, setSelectedVolumes] = useState<{ name: string; mountPath: string; isNew?: boolean; isAuto?: boolean; newSize?: string; newStorageClass?: string; newAccessMode?: string }[]>([]);
+  const [selectedVolumes, setSelectedVolumes] = useState<{ name: string; mountPath: string; readonly?: boolean; isNew?: boolean; isAuto?: boolean; newSize?: string; newStorageClass?: string; newAccessMode?: string }[]>([]);
 
   // Environment variables
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
@@ -246,7 +246,7 @@ function NewWorkspaceForm() {
               access_mode: workspaceType === "vm" ? "ReadWriteOnce" : v.newAccessMode || "ReadWriteOnce",
             });
           }
-          return { name: v.name, mount_path: v.mountPath };
+          return { name: v.name, mount_path: v.mountPath, readonly: v.isAuto ? false : v.readonly ?? false };
         })
       );
 
@@ -775,6 +775,15 @@ function NewWorkspaceForm() {
                   <label className="block text-[10px] text-gray-400 dark:text-gray-500">Mount Path</label>
                   <input type="text" value={vol.mountPath} onChange={(e) => updateVolume(index, "mountPath", e.target.value)} required placeholder="/data" className={inputClass} />
                 </div>
+                {workspaceType !== "vm" && <label className="col-span-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={!vol.isAuto && (vol.readonly ?? false)}
+                    disabled={vol.isAuto}
+                    onChange={(e) => setSelectedVolumes((vols) => vols.map((v, i) => i === index ? { ...v, readonly: e.target.checked } : v))}
+                  />
+                  Read-only{vol.isAuto ? " (home volume must be writable)" : ""}
+                </label>}
               </div>
             </div>
           ))}
