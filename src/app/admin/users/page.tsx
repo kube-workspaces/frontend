@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { API_BASE } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { ExecutionGrantsEditor, type ExecutionGrant } from "@/components/execution-grants-editor";
 
 interface UserCR {
@@ -14,6 +15,7 @@ interface UserCR {
     groups?: string[];
     namespaceAccess?: Array<{ namespace: string; role: string }>;
     executionGrants?: ExecutionGrant[];
+    externalIdentities?: Array<{ issuer: string; subject: string }>;
     localAuth?: {
       enabled: boolean;
       mustChangePassword?: boolean;
@@ -33,6 +35,9 @@ interface AdminNamespace {
 }
 
 export default function AdminUsersPage() {
+  const { authConfig, user: currentUser } = useAuth();
+  const localAvailable = !!(authConfig?.enabled && authConfig.localAuth?.enabled);
+  const oidcAvailable = !!(authConfig?.enabled && authConfig.issuerURL);
   const [users, setUsers] = useState<UserCR[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +51,25 @@ export default function AdminUsersPage() {
   const [saving, setSaving] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState<{ email: string; password: string } | null>(null);
   const [resettingPassword, setResettingPassword] = useState<string | null>(null);
+  const [linkingIdentity, setLinkingIdentity] = useState(false);
+
+  async function handleLinkIdentity() {
+    setLinkingIdentity(true);
+    setError(null);
+    try {
+      const res = await fetch("/auth/oidc/link", {
+        method: "POST",
+        credentials: "include",
+        headers: { "X-KW-Link-Intent": "link-own-identity" },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Unable to start OIDC linking");
+      window.location.assign(data.authorizationURL);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to start OIDC linking");
+      setLinkingIdentity(false);
+    }
+  }
 
   const fetchNamespaces = useCallback(async () => {
     try {
@@ -103,6 +127,10 @@ export default function AdminUsersPage() {
 
   async function handleCreate() {
     if (!createForm.email) return;
+    if ((createForm.authMethod === "local" && !localAvailable) || (createForm.authMethod === "oidc" && !oidcAvailable)) {
+      setError("The selected sign-in method is not enabled. Check Authentication settings.");
+      return;
+    }
     setCreating(true);
     try {
       const body: Record<string, string> = {
@@ -151,6 +179,27 @@ export default function AdminUsersPage() {
       await fetchUsers();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to reset password");
+    } finally {
+      setResettingPassword(null);
+    }
+  }
+
+  async function handleEnableLocalPassword(name: string, email: string) {
+    if (!confirm(`Add local password sign-in for "${email}"? A temporary password will be generated for this existing account.`)) return;
+    setResettingPassword(name);
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enableLocalAuth: true }),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to enable local password");
+      if (data.password) setGeneratedPassword({ email, password: data.password });
+      await fetchUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to enable local password");
     } finally {
       setResettingPassword(null);
     }
@@ -256,12 +305,36 @@ export default function AdminUsersPage() {
             </p>
           </div>
           <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="px-3 py-1.5 text-sm font-medium text-[var(--color-primary-foreground)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-md transition-colors"
+            onClick={() => {
+              setCreateForm({ ...createForm, authMethod: oidcAvailable ? "oidc" : "local", password: "" });
+              setShowCreate(!showCreate);
+            }}
+            disabled={!localAvailable && !oidcAvailable}
+            className="px-3 py-1.5 text-sm font-medium text-[var(--color-primary-foreground)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded-md transition-colors"
           >
             Create User
           </button>
         </div>
+
+        <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+          Local passwords are managed independently of SSO. Adding a password keeps the same account, workspaces, and access.
+          {authConfig && !localAvailable && " Local password sign-in is disabled in Authentication settings."}
+          {!authConfig && " Authentication settings are unavailable; credential creation is disabled."}
+        </p>
+
+        {oidcAvailable && currentUser?.role === "admin" && (
+          <div className="mb-4 rounded border border-gray-200 dark:border-gray-700 p-3 text-sm">
+            <p>Link your OIDC sign-in to {currentUser.email} to keep the same account, workspaces, and access with either login method.</p>
+            <button
+              onClick={handleLinkIdentity}
+              disabled={linkingIdentity || currentUser.mustChangePassword}
+              className="mt-2 text-[var(--color-primary)] disabled:opacity-50"
+            >
+              {linkingIdentity ? "Opening OIDC provider…" : "Link my OIDC identity"}
+            </button>
+            {currentUser.mustChangePassword && <p className="mt-1 text-gray-500">Change your temporary password before linking.</p>}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-400">
@@ -272,6 +345,11 @@ export default function AdminUsersPage() {
         {showCreate && (
           <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
             <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">New User</h3>
+            {createForm.authMethod === "oidc" && (
+              <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                This creates an unlinked account. OIDC sign-in requires a verified identity binding; matching email alone does not link accounts. New identities can instead create their own accounts at first sign-in when automatic provisioning is enabled.
+              </p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input
                 type="email"
@@ -297,12 +375,13 @@ export default function AdminUsersPage() {
                 <option value="admin">Admin</option>
               </select>
               <select
+                aria-label="Sign-in method"
                 value={createForm.authMethod}
                 onChange={(e) => setCreateForm({ ...createForm, authMethod: e.target.value })}
                 className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
               >
-                <option value="oidc">SSO (OIDC)</option>
-                <option value="local">Local password</option>
+                {oidcAvailable && <option value="oidc">SSO (OIDC)</option>}
+                {localAvailable && <option value="local">Local password</option>}
               </select>
               {createForm.authMethod === "local" && (
                 <input
@@ -317,7 +396,7 @@ export default function AdminUsersPage() {
             <div className="mt-3 flex gap-2">
               <button
                 onClick={handleCreate}
-                disabled={creating || !createForm.email}
+                disabled={creating || !createForm.email || (createForm.authMethod === "local" ? !localAvailable : !oidcAvailable)}
                 className="px-3 py-1.5 text-sm font-medium text-[var(--color-primary-foreground)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded transition-colors"
               >
                 {creating ? "Creating..." : "Create"}
@@ -371,9 +450,14 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
                     <td className="py-2 px-3 text-xs">
+                      {!!user.spec?.externalIdentities?.length && (
+                        <span className="mr-1 inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" title={user.spec.externalIdentities.map((identity) => identity.issuer).join(", ")}>
+                          OIDC linked
+                        </span>
+                      )}
                       {user.spec?.localAuth?.enabled ? (
                         <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                          Local
+                          Local password
                           {user.spec.localAuth.mustChangePassword && (
                             <span className="ml-1 text-amber-600 dark:text-amber-400" title="Must change password on next login">
                               &#9998;
@@ -382,7 +466,7 @@ export default function AdminUsersPage() {
                         </span>
                       ) : (
                         <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                          SSO
+                          No local password
                         </span>
                       )}
                     </td>
@@ -435,13 +519,22 @@ export default function AdminUsersPage() {
                         >
                           VM execution
                         </button>
-                        {user.spec?.localAuth?.enabled && (
+                        {localAvailable && user.spec?.localAuth?.enabled && (
                           <button
                             onClick={() => handleResetPassword(user.metadata!.name, user.spec!.email)}
                             disabled={resettingPassword === user.metadata?.name}
                             className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] disabled:opacity-50"
                           >
                             {resettingPassword === user.metadata?.name ? "Resetting..." : "Reset password"}
+                          </button>
+                        )}
+                        {localAvailable && user.spec && !user.spec.localAuth?.enabled && (
+                          <button
+                            onClick={() => handleEnableLocalPassword(user.metadata!.name, user.spec!.email)}
+                            disabled={resettingPassword === user.metadata?.name}
+                            className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+                          >
+                            {resettingPassword === user.metadata?.name ? "Enabling..." : "Enable local password"}
                           </button>
                         )}
                         <button

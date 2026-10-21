@@ -2,9 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 interface AuthConfigState {
   enabled: boolean;
+  localAuth?: {
+    enabled: boolean;
+    bootstrapAdmin?: { email?: string; mustChangePassword?: boolean };
+  };
   oidc?: {
     issuerURL: string;
     clientID: string;
@@ -27,6 +32,7 @@ interface AuthConfigState {
 }
 
 export default function AdminSettingsPage() {
+  const { refresh } = useAuth();
   const [config, setConfig] = useState<AuthConfigState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -64,6 +70,14 @@ export default function AdminSettingsPage() {
 
   async function handleSave() {
     if (!config) return;
+    if (config.enabled && !config.localAuth?.enabled && !config.oidc?.issuerURL?.trim()) {
+      setError("Enable local password authentication or configure an OIDC provider before requiring sign-in.");
+      return;
+    }
+    if (config.oidc?.issuerURL?.trim() && !config.oidc.clientID?.trim()) {
+      setError("An OIDC client ID is required when an issuer URL is configured.");
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -78,6 +92,7 @@ export default function AdminSettingsPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save settings");
       }
+      await refresh();
       setSuccess("Settings saved successfully");
       setTimeout(() => setSuccess(null), 3000);
     } catch (e) {
@@ -99,12 +114,12 @@ export default function AdminSettingsPage() {
           <div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Authentication</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Configure authentication, OIDC, and user provisioning
+              Configure local passwords, OIDC, and user provisioning
             </p>
           </div>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !config}
             className="px-3 py-1.5 text-sm font-medium text-[var(--color-primary-foreground)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded-md transition-colors"
           >
             {saving ? "Saving..." : "Save Changes"}
@@ -112,7 +127,7 @@ export default function AdminSettingsPage() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-400">
+          <div role="alert" className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-400">
             {error}
           </div>
         )}
@@ -136,6 +151,7 @@ export default function AdminSettingsPage() {
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
+                    aria-label="Require sign-in"
                     checked={config.enabled}
                     onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
                     className="sr-only peer"
@@ -145,14 +161,42 @@ export default function AdminSettingsPage() {
               </div>
             </section>
 
+            <section className="p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-medium text-gray-900 dark:text-white">Local Passwords</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Allow password sign-in for accounts with local credentials. Can be enabled alongside OIDC.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    aria-label="Enable local passwords"
+                    checked={config.localAuth?.enabled ?? false}
+                    onChange={(e) => setConfig({ ...config, localAuth: { ...config.localAuth, enabled: e.target.checked } })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-200 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--color-primary)]"></div>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+                Manage account passwords on the Users page. Bootstrap administrator settings and existing credentials are preserved.
+              </p>
+            </section>
+
             {/* OIDC Configuration */}
             <section className="p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg">
               <h2 className="text-sm font-medium text-gray-900 dark:text-white mb-3">OIDC Provider</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Configure an issuer to offer SSO in addition to any enabled local password sign-in. Leave the issuer empty for local-only authentication.
+              </p>
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Issuer URL</label>
                   <input
                     type="url"
+                    aria-label="OIDC issuer URL"
                     placeholder="https://dex.example.com"
                     value={config.oidc?.issuerURL || ""}
                     onChange={(e) => setConfig({ ...config, oidc: { ...config.oidc, issuerURL: e.target.value, clientID: config.oidc?.clientID || "" } })}
@@ -163,6 +207,7 @@ export default function AdminSettingsPage() {
                   <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Client ID</label>
                   <input
                     type="text"
+                    aria-label="OIDC client ID"
                     placeholder="kube-workspaces"
                     value={config.oidc?.clientID || ""}
                     onChange={(e) => setConfig({ ...config, oidc: { ...config.oidc, issuerURL: config.oidc?.issuerURL || "", clientID: e.target.value } })}
