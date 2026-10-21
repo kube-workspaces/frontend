@@ -52,6 +52,31 @@ export default function AdminUsersPage() {
   const [generatedPassword, setGeneratedPassword] = useState<{ email: string; password: string } | null>(null);
   const [resettingPassword, setResettingPassword] = useState<string | null>(null);
   const [linkingIdentity, setLinkingIdentity] = useState(false);
+  const [adoptingUser, setAdoptingUser] = useState<string | null>(null);
+  const [adoption, setAdoption] = useState<{ email: string; url: string; expiresAt: number } | null>(null);
+
+  async function handleAdoptIdentity(name: string) {
+    setAdoptingUser(name);
+    setAdoption(null);
+    setError(null);
+    try {
+      const res = await fetch("/auth/oidc/adoptions", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-KW-Link-Intent": "adopt-legacy-identity" },
+        body: JSON.stringify({ userName: name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Unable to authorize OIDC adoption");
+      const url = new URL(data.adoptionURL, window.location.origin);
+      if (url.origin !== window.location.origin || url.pathname !== "/auth/oidc/adopt") throw new Error("Invalid adoption URL");
+      setAdoption({ email: data.email, url: url.href, expiresAt: data.expiresAt });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to authorize OIDC adoption");
+    } finally {
+      setAdoptingUser(null);
+    }
+  }
 
   async function handleLinkIdentity() {
     setLinkingIdentity(true);
@@ -347,7 +372,7 @@ export default function AdminUsersPage() {
             <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">New User</h3>
             {createForm.authMethod === "oidc" && (
               <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                This creates an unlinked account. OIDC sign-in requires a verified identity binding; matching email alone does not link accounts. New identities can instead create their own accounts at first sign-in when automatic provisioning is enabled.
+                This creates an unlinked account. Then use Authorize OIDC adoption to invite the user to verify their provider identity. Matching email alone does not link accounts. New identities can instead create their own accounts at first sign-in when automatic provisioning is enabled.
               </p>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -537,6 +562,15 @@ export default function AdminUsersPage() {
                             {resettingPassword === user.metadata?.name ? "Enabling..." : "Enable local password"}
                           </button>
                         )}
+                        {oidcAvailable && currentUser?.role === "admin" && user.spec && !user.spec.disabled && !user.spec.localAuth?.enabled && !user.spec.externalIdentities?.length && (
+                          <button
+                            onClick={() => handleAdoptIdentity(user.metadata!.name)}
+                            disabled={adoptingUser !== null || currentUser.mustChangePassword}
+                            className="text-xs text-[var(--color-primary)] disabled:opacity-50"
+                          >
+                            {adoptingUser === user.metadata?.name ? "Authorizing…" : "Authorize OIDC adoption"}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleToggleDisabled(user.metadata!.name, user.spec?.disabled || false)}
                           className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
@@ -567,6 +601,18 @@ export default function AdminUsersPage() {
             onClose={() => setExecutionUser(null)}
             onSaved={() => { setExecutionUser(null); void fetchUsers(); }}
           />
+        )}
+
+        {adoption && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div role="dialog" aria-modal="true" aria-labelledby="adoption-title" className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl w-full max-w-lg mx-4 p-4 space-y-3">
+              <h3 id="adoption-title" className="text-sm font-semibold">OIDC adoption for {adoption.email}</h3>
+              <p className="text-sm">Share this single-use invitation securely with the account owner. They must sign in to the identity provider as {adoption.email}. Their existing account, workspaces and permissions are preserved.</p>
+              <p className="text-xs">Expires at {new Date(adoption.expiresAt * 1000).toLocaleTimeString()} (five minutes after authorization). Linking does not replace an existing browser session; sign in again afterward.</p>
+              <input aria-label="OIDC adoption invitation" readOnly value={adoption.url} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 text-xs font-mono border rounded bg-transparent" />
+              <button onClick={() => setAdoption(null)} className="text-sm text-[var(--color-primary)]">Done</button>
+            </div>
+          </div>
         )}
 
         {/* Generated Password Dialog (one-time display) */}

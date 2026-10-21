@@ -64,6 +64,46 @@ describe("Authentication administration", () => {
 });
 
 describe("Users credential administration", () => {
+  it("authorizes a bounded invitation for an unbound OIDC-only account", async () => {
+    auth.user = { email: "admin@example.com", role: "admin" };
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === "/auth/oidc/adoptions") return new Response(JSON.stringify({ adoptionURL: "/auth/oidc/adopt?code=invitation", email: "legacy@example.com", expiresAt: 2000000000 }));
+      if (url.endsWith("/admin/namespaces")) return new Response("[]");
+      return new Response(JSON.stringify({ items: [
+        { metadata: { name: "legacy" }, spec: { email: "legacy@example.com", role: "editor" } },
+        { metadata: { name: "linked" }, spec: { email: "linked@example.com", role: "editor", externalIdentities: [{ issuer: "https://idp.example.com", subject: "bound" }] } },
+        { metadata: { name: "local" }, spec: { email: "local@example.com", role: "editor", localAuth: { enabled: true } } },
+      ] }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<UsersPage />);
+    const button = await screen.findByRole("button", { name: "Authorize OIDC adoption" });
+    expect(screen.getAllByRole("button", { name: "Authorize OIDC adoption" })).toHaveLength(1);
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog", { name: "OIDC adoption for legacy@example.com" });
+    expect(within(dialog).getByRole("textbox", { name: "OIDC adoption invitation" })).toHaveValue(`${window.location.origin}/auth/oidc/adopt?code=invitation`);
+    expect(fetcher).toHaveBeenCalledWith("/auth/oidc/adoptions", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json", "X-KW-Link-Intent": "adopt-legacy-identity" },
+      body: JSON.stringify({ userName: "legacy" }),
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("reports adoption denial without displaying an invitation", async () => {
+    auth.user = { email: "admin@example.com", role: "admin" };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/auth/oidc/adoptions") return new Response('{"message":"Sign in again before adoption"}', { status: 403 });
+      if (url.endsWith("/admin/namespaces")) return new Response("[]");
+      return new Response('{"items":[{"metadata":{"name":"legacy"},"spec":{"email":"legacy@example.com","role":"editor"}}]}');
+    }));
+    render(<UsersPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Authorize OIDC adoption" }));
+    await screen.findByText("Sign in again before adoption");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("starts explicit own-account linking with credentials and reports a denied session", async () => {
     auth.user = { email: "admin@example.com", role: "admin" };
     const fetcher = vi.fn(async (url: string) => {
