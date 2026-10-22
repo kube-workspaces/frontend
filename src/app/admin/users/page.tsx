@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { ExecutionGrantsEditor, type ExecutionGrant } from "@/components/execution-grants-editor";
 
 interface UserCR {
-  metadata?: { name: string; creationTimestamp?: string };
+  metadata?: { name: string; uid?: string; creationTimestamp?: string };
   spec?: {
     email: string;
     displayName?: string;
@@ -35,9 +35,9 @@ interface AdminNamespace {
 }
 
 export default function AdminUsersPage() {
-  const { authConfig, user: currentUser } = useAuth();
-  const localAvailable = !!(authConfig?.enabled && authConfig.localAuth?.enabled);
-  const oidcAvailable = !!(authConfig?.enabled && authConfig.issuerURL);
+  const { authConfig, user: currentUser, refresh } = useAuth();
+  const localAvailable = !!(authConfig?.enabled && (authConfig.methods ? authConfig.methods.includes("local") : authConfig.localAuth?.enabled));
+  const oidcAvailable = !!(authConfig?.enabled && (authConfig.methods ? authConfig.methods.includes("oidc") : authConfig.issuerURL));
   const [users, setUsers] = useState<UserCR[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +54,28 @@ export default function AdminUsersPage() {
   const [linkingIdentity, setLinkingIdentity] = useState(false);
   const [adoptingUser, setAdoptingUser] = useState<string | null>(null);
   const [adoption, setAdoption] = useState<{ email: string; url: string; expiresAt: number } | null>(null);
+  const [unlinkingUser, setUnlinkingUser] = useState<string | null>(null);
+
+  async function handleUnlinkIdentity(user: UserCR, identity: { issuer: string; subject: string }) {
+    if (!user.metadata?.uid || !confirm(`Remove this OIDC identity from "${user.spec?.email}"? Sessions and devices derived from it will stop working. Another usable login method is required.`)) return;
+    setUnlinkingUser(user.metadata.name);
+    setError(null);
+    try {
+      const res = await fetch("/auth/oidc/unlink", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", "X-KW-Link-Intent": "unlink-identity" },
+        body: JSON.stringify({ userName: user.metadata.name, userUID: user.metadata.uid, ...identity }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Unable to unlink OIDC identity");
+      await refresh();
+      await fetchUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to unlink OIDC identity");
+    } finally {
+      setUnlinkingUser(null);
+    }
+  }
 
   async function handleAdoptIdentity(name: string) {
     setAdoptingUser(name);
@@ -571,6 +593,17 @@ export default function AdminUsersPage() {
                             {adoptingUser === user.metadata?.name ? "Authorizing…" : "Authorize OIDC adoption"}
                           </button>
                         )}
+                        {currentUser?.role === "admin" && user.spec?.externalIdentities?.map((identity) => (
+                          <button
+                            key={`${identity.issuer}/${identity.subject}`}
+                            onClick={() => handleUnlinkIdentity(user, identity)}
+                            disabled={!user.metadata?.uid || unlinkingUser !== null || user.spec?.disabled || currentUser.mustChangePassword}
+                            title={`Unlink identity from ${identity.issuer}`}
+                            className="text-xs text-[var(--color-primary)] disabled:opacity-50"
+                          >
+                            {unlinkingUser === user.metadata?.name ? "Unlinking…" : "Unlink OIDC"}
+                          </button>
+                        ))}
                         <button
                           onClick={() => handleToggleDisabled(user.metadata!.name, user.spec?.disabled || false)}
                           className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"

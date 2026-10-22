@@ -55,19 +55,19 @@ export default function ProfilePage() {
                 >
                   {user.role}
                 </span>
-                {authConfig?.enabled && authConfig.issuerURL && (
+                {user.authMethod && (
                   <span
                     className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60"
-                    title={`Signed in via OIDC (SSO). Issuer: ${authConfig.issuerURL}`}
+                    title={user.authMethod === "oidc" ? "Current session uses OIDC (SSO)" : "Current session uses a local password"}
                   >
-                    SSO
+                    {user.authMethod === "oidc" ? "SSO" : "Local password"}
                   </span>
                 )}
               </div>
             </div>
           </div>
         </div>
-        {authConfig?.localAuth?.enabled && (
+        {user.canChangePassword && (
           <div className="px-6 py-3 border-t border-gray-100 dark:border-gray-800">
             <Link
               href="/change-password"

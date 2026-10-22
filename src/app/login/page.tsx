@@ -33,8 +33,8 @@ export default function LoginPage() {
     );
   }
 
-  const localAuthEnabled = authConfig?.localAuth?.enabled ?? false;
-  const ssoEnabled = !!authConfig?.issuerURL;
+  const localAuthEnabled = authConfig?.methods ? authConfig.methods.includes("local") : (authConfig?.localAuth?.enabled ?? false);
+  const ssoEnabled = authConfig?.methods ? authConfig.methods.includes("oidc") : !!authConfig?.issuerURL;
 
   async function handleLocalSubmit(e: React.FormEvent) {
     e.preventDefault();

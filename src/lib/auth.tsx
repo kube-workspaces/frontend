@@ -11,6 +11,10 @@ export interface AuthUser {
   personalNamespace?: string;
   avatarURL?: string;
   mustChangePassword?: boolean;
+  authMethod?: "local" | "oidc";
+  localPasswordEnabled?: boolean;
+  oidcLinked?: boolean;
+  canChangePassword?: boolean;
   executionCredentialBound?: boolean;
   executionGrants?: {
     namespace: string;
@@ -22,6 +26,7 @@ export interface AuthUser {
 
 export interface AuthConfig {
   enabled: boolean;
+  methods?: Array<"local" | "oidc">;
   issuerURL?: string;
   personalNamespaces?: {
     enabled: boolean;
@@ -102,6 +107,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             personalNamespace: data.personalNamespace,
             avatarURL: data.avatarURL,
             mustChangePassword: data.mustChangePassword,
+            authMethod: data.authMethod,
+            localPasswordEnabled: data.localPasswordEnabled,
+            oidcLinked: data.oidcLinked,
+            canChangePassword: data.canChangePassword,
             executionCredentialBound: data.executionCredentialBound,
             executionGrants: data.executionGrants,
           });
@@ -116,8 +125,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    await fetchMe();
-  }, [fetchMe]);
+    const config = await fetchAuthConfig();
+    if (config?.enabled) await fetchMe();
+    else setUser(null);
+  }, [fetchAuthConfig, fetchMe]);
 
   useEffect(() => {
     async function init() {

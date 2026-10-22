@@ -64,6 +64,26 @@ describe("Authentication administration", () => {
 });
 
 describe("Users credential administration", () => {
+  it("unlinks an exact UID-bound identity and reports last-method denial", async () => {
+    auth.user = { email: "admin@example.com", role: "admin" };
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === "/auth/oidc/unlink") return new Response('{"message":"Preserve another usable login method"}', { status: 409 });
+      if (url.endsWith("/admin/namespaces")) return new Response("[]");
+      return new Response(JSON.stringify({ items: [{ metadata: { name: "linked", uid: "original-uid" }, spec: { email: "linked@example.com", role: "editor", externalIdentities: [{ issuer: "https://idp.example.com", subject: "verified-subject" }] } }] }));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<UsersPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink OIDC" }));
+    await screen.findByText("Preserve another usable login method");
+    expect(fetcher).toHaveBeenCalledWith("/auth/oidc/unlink", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json", "X-KW-Link-Intent": "unlink-identity" },
+      body: JSON.stringify({ userName: "linked", userUID: "original-uid", issuer: "https://idp.example.com", subject: "verified-subject" }),
+    });
+    expect(screen.getByRole("button", { name: "Unlink OIDC" })).toBeEnabled();
+  });
+
   it("authorizes a bounded invitation for an unbound OIDC-only account", async () => {
     auth.user = { email: "admin@example.com", role: "admin" };
     const fetcher = vi.fn(async (url: string) => {
@@ -151,6 +171,7 @@ describe("Users credential administration", () => {
     { mode: "local-only", config: { enabled: true, localAuth: { enabled: true } }, methods: ["Local password"] },
     { mode: "OIDC-only", config: { enabled: true, issuerURL: "https://idp.example.com" }, methods: ["SSO (OIDC)"] },
     { mode: "mixed", config: { enabled: true, issuerURL: "https://idp.example.com", localAuth: { enabled: true } }, methods: ["SSO (OIDC)", "Local password"] },
+    { mode: "authoritative discovery", config: { enabled: true, issuerURL: "https://idp.example.com", localAuth: { enabled: true }, methods: ["local" as const] }, methods: ["Local password"] },
   ])("offers only enabled creation methods in $mode", async ({ config, methods }) => {
     auth.authConfig = config;
     const fetcher = mockUsers();
@@ -163,7 +184,7 @@ describe("Users credential administration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create", exact: true }));
     await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
     const create = fetcher.mock.calls.find(([, init]) => init?.method === "POST");
-    expect(JSON.parse(create![1]!.body as string).authMethod).toBe(config.issuerURL ? "oidc" : "local");
+    expect(JSON.parse(create![1]!.body as string).authMethod).toBe(methods.includes("SSO (OIDC)") ? "oidc" : "local");
   });
 
   it("adds a local password to the same account and supports subsequent reset", async () => {
