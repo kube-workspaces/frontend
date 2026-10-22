@@ -361,6 +361,7 @@ export interface WorkspaceImage {
   default_cloud_init?: boolean;
   default_user_data?: string;
   default_homedir?: string;
+  default_image_pull_policy?: string;
   default_shared_memory?: boolean;
   workspace_types?: string[];
   links?: ImageLink[];
@@ -405,6 +406,7 @@ export interface CreateImagePayload {
   default_cloud_init?: boolean;
   default_user_data?: string;
   default_homedir?: string;
+  default_image_pull_policy?: string;
   links?: ImageLink[];
   default_credentials?: ImageCredentials;
   proxy_config?: ImageProxyConfig;

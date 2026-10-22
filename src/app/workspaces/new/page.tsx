@@ -122,7 +122,7 @@ function NewWorkspaceForm() {
   const [shmEnabled, setShmEnabled] = useState(false);
 
   // Image pull policy
-  const [imagePullPolicy, setImagePullPolicy] = useState("IfNotPresent");
+  const [imagePullPolicy, setImagePullPolicy] = useState("");
 
   // Form field locks (admin-controlled)
   const [fieldLocks, setFieldLocks] = useState<FormFieldLock[]>([]);
@@ -293,7 +293,7 @@ function NewWorkspaceForm() {
         ...(allTolerations.length > 0 ? { tolerations: allTolerations } : {}),
         ...(Object.keys(allNodeSelector).length > 0 ? { node_selector: allNodeSelector } : {}),
         ...(shmEnabled && workspaceType !== "vm" ? { shared_memory: true } : {}),
-        ...(imagePullPolicy !== "IfNotPresent" ? { image_pull_policy: imagePullPolicy } : {}),
+        ...(imagePullPolicy ? { image_pull_policy: imagePullPolicy } : {}),
         ...(isWindows ? { vm_options: {
           import_secret_name: importSecret || undefined,
           import_cert_config_map_name: registryCA || undefined,
@@ -562,6 +562,7 @@ function NewWorkspaceForm() {
             disabled={!!getFieldLock("image_pull_policy")}
             className={getFieldLock("image_pull_policy") ? lockedInputClass : inputClass}
           >
+            <option value="">Auto (image default, else Kubernetes default)</option>
             <option value="IfNotPresent">IfNotPresent (use cached image if available)</option>
             <option value="Always">Always (pull image every time)</option>
             <option value="Never">Never (only use local image)</option>

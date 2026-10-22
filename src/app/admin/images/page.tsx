@@ -211,6 +211,7 @@ function EditImageModal({
       imageHomepageUrl: (s.imageHomepageURL as string) || (image.image_homepage_url || ""),
       defaultUser: (s.defaultUser as string) || (image.default_user || ""),
       defaultHomedir: (s.defaultHomedir as string) || (image.default_homedir || ""),
+      defaultImagePullPolicy: (s.defaultImagePullPolicy as string) || (image.default_image_pull_policy || ""),
       defaultArgs: Array.isArray(s.defaultArgs) ? (s.defaultArgs as string[]).join(" ") : "",
       needsNoopSw: Boolean((s.proxyConfig as Record<string, unknown>)?.needsNoopSW || image.proxy_config?.needs_noop_sw),
       rewritePaths: Boolean((s.proxyConfig as Record<string, unknown>)?.rewriteHostAbsolutePaths || image.proxy_config?.rewrite_host_absolute_paths),
@@ -242,6 +243,7 @@ function EditImageModal({
       imageHomepageURL: form.imageHomepageUrl,
       defaultUser: form.defaultUser || undefined,
       defaultHomedir: form.defaultHomedir || undefined,
+      defaultImagePullPolicy: form.defaultImagePullPolicy || undefined,
     };
 
     if (form.defaultArgs.trim()) {
@@ -361,6 +363,17 @@ function EditImageModal({
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Default Home Dir</label>
               <input type="text" value={form.defaultHomedir} onChange={(e) => setForm({ ...form, defaultHomedir: e.target.value })} placeholder="/home/coder" className={`${inputClass} font-mono`} />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Image Pull Policy</label>
+            <select value={form.defaultImagePullPolicy} onChange={(e) => setForm({ ...form, defaultImagePullPolicy: e.target.value })} className={inputClass}>
+              <option value="">Auto (Kubernetes default)</option>
+              <option value="Always">Always (pull image every time)</option>
+              <option value="IfNotPresent">IfNotPresent (use cached image if available)</option>
+              <option value="Never">Never (only use local image)</option>
+            </select>
+            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">Pull policy for workspaces created from this image. Auto leaves it unset so Kubernetes applies its own default.</p>
           </div>
 
           <div className="flex items-center gap-4">
@@ -491,6 +504,7 @@ function AddImageModal({ onClose, onCreated }: { onClose: () => void; onCreated:
   const [imageHomepageUrl, setImageHomepageUrl] = useState("");
   const [defaultUser, setDefaultUser] = useState("");
   const [defaultHomedir, setDefaultHomedir] = useState("");
+  const [defaultImagePullPolicy, setDefaultImagePullPolicy] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -523,6 +537,7 @@ function AddImageModal({ onClose, onCreated }: { onClose: () => void; onCreated:
       if (imageHomepageUrl) payload.image_homepage_url = imageHomepageUrl;
       if (defaultUser) payload.default_user = defaultUser;
       if (defaultHomedir) payload.default_homedir = defaultHomedir;
+      if (defaultImagePullPolicy) payload.default_image_pull_policy = defaultImagePullPolicy;
 
       await createImage(payload);
       onCreated();
@@ -618,6 +633,17 @@ function AddImageModal({ onClose, onCreated }: { onClose: () => void; onCreated:
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Default Home Dir</label>
               <input type="text" value={defaultHomedir} onChange={(e) => setDefaultHomedir(e.target.value)} placeholder="/home/coder" className={`${inputClass} font-mono`} />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Image Pull Policy</label>
+            <select value={defaultImagePullPolicy} onChange={(e) => setDefaultImagePullPolicy(e.target.value)} className={inputClass}>
+              <option value="">Auto (Kubernetes default)</option>
+              <option value="Always">Always (pull image every time)</option>
+              <option value="IfNotPresent">IfNotPresent (use cached image if available)</option>
+              <option value="Never">Never (only use local image)</option>
+            </select>
+            <p className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500">Pull policy for workspaces created from this image. Auto leaves it unset so Kubernetes applies its own default.</p>
           </div>
 
           <div className="flex items-center gap-4">
