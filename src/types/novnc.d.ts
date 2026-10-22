@@ -44,7 +44,7 @@ declare module "@novnc/novnc" {
   export class RFB extends EventTarget {
     constructor(
       target: HTMLElement,
-      url?: string,
+      url?: string | WebSocket,
       options?: RFBOptions
     );
     disconnect();

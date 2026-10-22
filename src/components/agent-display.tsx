@@ -1,4 +1,5 @@
 "use client";
+import { CREDENTIAL_REVOKED_CLOSE_CODE, CREDENTIAL_REVOKED_MESSAGE } from "@/lib/stream-revocation";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { RefObject } from "react";
@@ -401,13 +402,20 @@ export default function AgentDisplay({
         else void handleAudio(frame.body);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (cancelled.current || disposedRef.current || wsRef.current !== ws) return;
         wsRef.current = null;
         presentedRef.current = false;
         dispatchResolution({ type: "reset" });
         if (resizeAckTimerRef.current) window.clearTimeout(resizeAckTimerRef.current);
         stopMedia();
+        if (event.code === CREDENTIAL_REVOKED_CLOSE_CODE) {
+          admittedRef.current = false;
+          notify(false);
+          setPhase("degraded");
+          setError(CREDENTIAL_REVOKED_MESSAGE);
+          return;
+        }
         if (admittedRef.current || everAdmittedRef.current) {
           // Transport loss after admission: bounded auto-reconnect, mirroring
           // the native two-attempts-in-ten-seconds budget. An unbounded

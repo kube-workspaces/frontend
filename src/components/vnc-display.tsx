@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import RFB from "@novnc/novnc";
+import { CREDENTIAL_REVOKED_CLOSE_CODE, CREDENTIAL_REVOKED_MESSAGE } from "@/lib/stream-revocation";
 import { ConsoleResolutionStatus } from "@/components/guest-resolution-control";
 import { API_BASE, checkVNCConsoleInUse, takeOverVNCConsole } from "@/lib/api";
 import { useAdaptiveQualityController, applyQualitySettings, requestLosslessRefresh } from "@/lib/adaptive-quality-controller";
@@ -142,7 +143,13 @@ export default function VncDisplay({
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}${API_BASE}/v1/workspaces/${workspaceName}/vnc?namespace=${namespace}`;
 
-    const rfb = new RFB(mountRef.current, wsUrl, {
+    // Observe the raw close code before noVNC reduces it to a disconnect event.
+    const socket = new WebSocket(wsUrl, ["binary", "plain.kubevirt.io"]);
+    let credentialRevoked = false;
+    socket.addEventListener("close", (event) => {
+      credentialRevoked = event.code === CREDENTIAL_REVOKED_CLOSE_CODE;
+    });
+    const rfb = new RFB(mountRef.current, socket, {
       // Prefer a raw-binary subprotocol; the API bridge echoes whichever the
       // client offers (binary / base64 / plain.kubevirt.io).
       wsProtocols: ["binary", "plain.kubevirt.io"],
@@ -260,6 +267,11 @@ export default function VncDisplay({
       resizeObserverRef.current = ro;
     }
     rfb.addEventListener("disconnect", (e: Event) => {
+      if (credentialRevoked) {
+        notify(false);
+        setError(CREDENTIAL_REVOKED_MESSAGE);
+        return;
+      }
       const detail = (e as CustomEvent<{ clean?: boolean; reason?: string }>).detail;
       const reason = detail?.reason || "";
       setError(

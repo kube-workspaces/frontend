@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { API_BASE, checkSSHConsoleInUse, takeOverSSHConsole } from "@/lib/api";
+import { CREDENTIAL_REVOKED_CLOSE_CODE, CREDENTIAL_REVOKED_MESSAGE } from "@/lib/stream-revocation";
 
 const MAX_RECONNECT_ATTEMPTS = 12;
 
@@ -99,6 +100,11 @@ export function useSSHConsole({
     ws.onclose = (event) => {
       setIsConnected(false);
       if (disposed.current) return;
+      if (event.code === CREDENTIAL_REVOKED_CLOSE_CODE) {
+        write(`\r\n\x1b[31m${CREDENTIAL_REVOKED_MESSAGE}\x1b[0m\r\n`);
+        setError(CREDENTIAL_REVOKED_MESSAGE);
+        return;
+      }
       if (event.code === 1000) {
         const reason = event.reason ? ` ${event.reason}` : "";
         write(`\r\n\x1b[90mConnection closed.${reason}\x1b[0m\r\n`);

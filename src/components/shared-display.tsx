@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import RFB from "@novnc/novnc";
+import { CREDENTIAL_REVOKED_CLOSE_CODE, CREDENTIAL_REVOKED_MESSAGE } from "@/lib/stream-revocation";
 import AgentDisplay from "@/components/agent-display";
 import { ConsoleResolutionStatus } from "@/components/guest-resolution-control";
 import {
@@ -134,7 +135,12 @@ function SharedRFBDisplay({
       `&participant=${encodeURIComponent(participantIdRef.current)}` +
       (intent.force ? "&force=1" : "");
 
-    const rfb = new RFB(mountRef.current, wsUrl, {
+    const socket = new WebSocket(wsUrl, ["binary", "plain.kubevirt.io"]);
+    let credentialRevoked = false;
+    socket.addEventListener("close", (event) => {
+      credentialRevoked = event.code === CREDENTIAL_REVOKED_CLOSE_CODE;
+    });
+    const rfb = new RFB(mountRef.current, socket, {
       wsProtocols: ["binary", "plain.kubevirt.io"],
     });
     applyViewOnly(rfb);
@@ -211,6 +217,10 @@ function SharedRFBDisplay({
       notify(false);
       if (disposed.current || manualClose.current) {
         manualClose.current = false;
+        return;
+      }
+      if (credentialRevoked) {
+        setError(CREDENTIAL_REVOKED_MESSAGE);
         return;
       }
       setError(detail?.clean === false ? `Display disconnected: ${reason}`.trim() : "Display disconnected");
