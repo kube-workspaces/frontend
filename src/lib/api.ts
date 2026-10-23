@@ -138,6 +138,33 @@ export interface Workspace {
   volume_mounts?: VolumeMount[];
   vm_profile?: string;
   provisioned?: boolean;
+  vm_gpu_profile?: VMGPUProfile;
+}
+
+export interface VMGPUProfile {
+  id: string;
+  display_name: string;
+  resource_name: string;
+  kind: "pci" | "mediated";
+  count: number;
+  node_selector: Record<string, string>;
+  guest_driver_version: string;
+  experimental: boolean;
+}
+
+export async function listVMGPUProfiles(signal?: AbortSignal): Promise<VMGPUProfile[]> {
+  const res = await fetch(`${API_BASE}/v1/vm-gpu-profiles`, { credentials: "include", cache: "no-store", signal });
+  if (!res.ok) throw await apiError(res, "GPU profiles unavailable");
+  return res.json();
+}
+
+export async function setWorkspaceGPUProfile(name: string, namespace: string, profileId: string): Promise<Workspace> {
+  const res = await fetch(`${API_BASE}/v1/workspaces/${encodeURIComponent(name)}/gpu-profile?namespace=${encodeURIComponent(namespace)}`, {
+    method: "PUT", credentials: "include", cache: "no-store",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: profileId }),
+  });
+  if (!res.ok) throw await apiError(res, "GPU profile change failed");
+  return res.json();
 }
 
 // One subscription owns reconnects and a five-second polling fallback. Each
@@ -271,6 +298,7 @@ export interface CreateWorkspacePayload {
   shared_memory?: boolean;
   image_pull_policy?: string;
   vm_options?: {
+    gpu_profile?: string;
     import_secret_name?: string;
     import_cert_config_map_name?: string;
     storage_class_name?: string;

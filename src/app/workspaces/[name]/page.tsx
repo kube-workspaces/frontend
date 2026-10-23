@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { stringify as yamlStringify } from "yaml";
 import WindowsCredentials from "@/components/windows-credentials";
+import WindowsGPUSettings from "@/components/windows-gpu-settings";
 import WorkspaceSessions from "@/components/workspace-sessions";
 import WorkspaceExec from "@/components/workspace-exec";
 import {
@@ -705,6 +706,7 @@ Edit
       />
 
       {isWindows && <WindowsCredentials key={`${workspace.namespace}/${workspace.name}/${workspace.provisioned}`} name={workspace.name} namespace={workspace.namespace} />}
+      {isWindows && <WindowsGPUSettings key={`gpu/${workspace.namespace}/${workspace.name}/${workspace.vm_gpu_profile?.id || "software"}/${workspace.stopped}`} workspace={workspace} onUpdated={setWorkspace} />}
       {workspace.type === "vm" && <WorkspaceSessions name={workspace.name} namespace={workspace.namespace} />}
       {terminalOpen && workspace && (
         <TerminalModal

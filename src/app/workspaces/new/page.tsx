@@ -18,6 +18,7 @@ import {
   FormFieldLock,
 } from "@/lib/api";
 import { useNamespace } from "@/lib/namespace";
+import VMGPUProfileSelect from "@/components/vm-gpu-profile-select";
 
 // Scheduling presets define common node affinity/toleration configurations
 interface SchedulingPreset {
@@ -96,6 +97,7 @@ function NewWorkspaceForm() {
   const [selectedImage, setSelectedImage] = useState<WorkspaceImage | null>(null);
   const isWindows = selectedImage?.vm_profile === "windows11-amd64-v1";
   const [windowsNode, setWindowsNode] = useState("");
+  const [windowsGPUProfile, setWindowsGPUProfile] = useState("");
   const [importSecret, setImportSecret] = useState("");
   const [registryCA, setRegistryCA] = useState("");
   const [rootStorageClass, setRootStorageClass] = useState("");
@@ -286,7 +288,7 @@ function NewWorkspaceForm() {
           memory_request: memoryRequest,
           cpu_limit: cpuLimit,
           memory_limit: memoryLimit,
-          ...(gpuEnabled && gpuCount ? { gpu_request: gpuCount, gpu_vendor: gpuVendor } : {}),
+          ...(!isWindows && gpuEnabled && gpuCount ? { gpu_request: gpuCount, gpu_vendor: gpuVendor } : {}),
         },
         volume_mounts: volumeMounts,
         ...(filteredEnv.length > 0 ? { env: filteredEnv } : {}),
@@ -295,6 +297,7 @@ function NewWorkspaceForm() {
         ...(shmEnabled && workspaceType !== "vm" ? { shared_memory: true } : {}),
         ...(imagePullPolicy ? { image_pull_policy: imagePullPolicy } : {}),
         ...(isWindows ? { vm_options: {
+          gpu_profile: windowsGPUProfile || undefined,
           import_secret_name: importSecret || undefined,
           import_cert_config_map_name: registryCA || undefined,
           storage_class_name: rootStorageClass || undefined,
@@ -494,6 +497,7 @@ function NewWorkspaceForm() {
           <label className="block text-xs">CDI import Secret name<input value={importSecret} onChange={(e) => setImportSecret(e.target.value)} placeholder="registry-import (same namespace)" className={inputClass} /></label>
           <label className="block text-xs">Registry CA ConfigMap name<input value={registryCA} onChange={(e) => setRegistryCA(e.target.value)} placeholder="Optional private CA" className={inputClass} /></label>
           <label className="block text-xs">Root StorageClass<input value={rootStorageClass} onChange={(e) => setRootStorageClass(e.target.value)} placeholder="Cluster default" className={inputClass} /></label>
+          <VMGPUProfileSelect value={windowsGPUProfile} onChange={setWindowsGPUProfile} disabled={!!getFieldLock("gpu")} />
         </fieldset>}
 
         {/* GPU Section */}
