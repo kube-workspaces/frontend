@@ -51,7 +51,7 @@ interface AuthContextType {
   loginLocal: (email: string, password: string) => Promise<{ ok: boolean; error?: string; mustChangePassword?: boolean }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<AuthConfig | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -65,7 +65,7 @@ const AuthContext = createContext<AuthContextType>({
   loginLocal: async () => ({ ok: false, error: "not initialized" }),
   changePassword: async () => ({ ok: false, error: "not initialized" }),
   logout: async () => {},
-  refresh: async () => {},
+  refresh: async () => null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -128,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const config = await fetchAuthConfig();
     if (config?.enabled) await fetchMe();
     else setUser(null);
+    return config;
   }, [fetchAuthConfig, fetchMe]);
 
   useEffect(() => {

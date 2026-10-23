@@ -5,13 +5,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const { login, loginLocal, isAuthenticated, authEnabled, authConfig, loading } = useAuth();
+  const { login, loginLocal, isAuthenticated, authEnabled, authConfig, loading, refresh } = useAuth();
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
@@ -51,6 +52,21 @@ export default function LoginPage() {
       router.push("/change-password");
     } else {
       router.push("/");
+    }
+  }
+
+  async function handleRetryDiscovery() {
+    setRetrying(true);
+    setError(null);
+    try {
+      const config = await refresh();
+      if (!config) {
+        setError("Authentication discovery is still unavailable. Check connectivity and try again.");
+      }
+    } catch {
+      setError("Failed to refresh authentication configuration. Check connectivity and try again.");
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -131,6 +147,42 @@ export default function LoginPage() {
               <p className="text-xs text-gray-500 dark:text-gray-500">
                 You will be redirected to your identity provider
               </p>
+            )}
+
+            {!authConfig && (
+              <div className="w-full flex flex-col items-center gap-2 text-center">
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  Could not load the sign-in configuration. The API may be unreachable or still starting.
+                </p>
+                {error && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+                )}
+                <button
+                  onClick={handleRetryDiscovery}
+                  disabled={retrying}
+                  className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {retrying ? "Retrying..." : "Retry discovery"}
+                </button>
+              </div>
+            )}
+
+            {authConfig && !localAuthEnabled && !ssoEnabled && (
+              <div className="w-full flex flex-col items-center gap-2 text-center">
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  No sign-in methods are available. This usually means authentication configuration is incomplete.
+                </p>
+                {error && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+                )}
+                <button
+                  onClick={handleRetryDiscovery}
+                  disabled={retrying}
+                  className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {retrying ? "Retrying..." : "Retry discovery"}
+                </button>
+              </div>
             )}
           </div>
         </div>
