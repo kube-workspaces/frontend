@@ -95,6 +95,28 @@ function NewWorkspaceForm() {
   const [namespace, setNamespace] = useState("");
   const [workspaceType, setWorkspaceType] = useState<"container" | "vm" | "scratch">("container");
   const [selectedImage, setSelectedImage] = useState<WorkspaceImage | null>(null);
+  const [scratchImage, setScratchImage] = useState("alpine");
+  const [scratchImageMode, setScratchImageMode] = useState<"catalog" | "custom">("catalog");
+  const scratchImages = filterImagesByType(images, "scratch");
+
+  useEffect(() => {
+    if (workspaceType === "scratch") {
+      const sImages = filterImagesByType(images, "scratch");
+      if (sImages.length > 0 && scratchImageMode === "catalog") {
+        if (!selectedImage || !sImages.some((i) => i.image === selectedImage.image)) {
+          chooseImage(sImages[0]);
+        }
+      } else {
+        setSelectedImage({
+          cr_name: "scratch",
+          name: "Scratch",
+          image: scratchImage || "alpine",
+          default_port: 80,
+        });
+      }
+    }
+  }, [workspaceType, scratchImage, scratchImageMode, images]);
+
   const isWindows = selectedImage?.vm_profile === "windows11-amd64-v1";
   const [windowsNode, setWindowsNode] = useState("");
   const [windowsGPUProfile, setWindowsGPUProfile] = useState("");
@@ -397,10 +419,24 @@ function NewWorkspaceForm() {
                 onClick={() => {
                   setWorkspaceType(t.value);
                   if (workspaceType !== t.value) setSelectedVolumes([]);
-                  // Re-pick the image from the newly-filtered list, keeping the
-                  // current selection if it still applies.
-                  const allowed = filterImagesByType(images, t.value);
-                  chooseImage(selectedImage && allowed.find((i) => i.image === selectedImage.image) ? selectedImage : allowed[0] || null);
+                  if (t.value === "scratch") {
+                    const sImages = filterImagesByType(images, "scratch");
+                    if (sImages.length > 0 && scratchImageMode === "catalog") {
+                      chooseImage(sImages[0]);
+                    } else {
+                      setSelectedImage({
+                        cr_name: "scratch",
+                        name: "Scratch",
+                        image: scratchImage || "alpine",
+                        default_port: 80,
+                      });
+                    }
+                  } else {
+                    // Re-pick the image from the newly-filtered list, keeping the
+                    // current selection if it still applies.
+                    const allowed = filterImagesByType(images, t.value);
+                    chooseImage(selectedImage && allowed.find((i) => i.image === selectedImage.image) ? selectedImage : allowed[0] || null);
+                  }
                 }}
                 className={`flex-1 px-2.5 py-2 rounded-md border text-left transition-colors ${
                   workspaceType === t.value
@@ -416,56 +452,148 @@ function NewWorkspaceForm() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Image</label>
-          {(() => {
-            // Group images by category (filtered to the selected workspace type)
-            const grouped: Record<string, WorkspaceImage[]> = {};
-            for (const img of filterImagesByType(images, workspaceType)) {
-              const cat = img.category || "Other";
-              if (!grouped[cat]) grouped[cat] = [];
-              grouped[cat].push(img);
-            }
-            // Sort categories: named categories first (alphabetically), "Other" last
-            const categories = Object.keys(grouped).sort((a, b) => {
-              if (a === "Other") return 1;
-              if (b === "Other") return -1;
-              return a.localeCompare(b);
-            });
-            return (
-              <div className="space-y-3">
-                {categories.map((cat) => (
-                  <div key={cat}>
-                    <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">{cat}</p>
-                    <div className="space-y-1.5">
-                      {grouped[cat].map((img) => (
-                        <label
-                          key={img.image}
-                          className={`flex items-center p-2.5 border rounded-md cursor-pointer transition-colors ${
-                            selectedImage?.image === img.image
-                              ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)]"
-                              : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
-                          }`}
-                        >
-                          <input type="radio" name="image" value={img.image} checked={selectedImage?.image === img.image} onChange={() => chooseImage(img)} className="sr-only" />
-                          {img.icon && (
-                            img.icon.trimStart().startsWith("<svg") ? (
-                              <span className="w-6 h-6 mr-2.5 rounded flex-shrink-0 inline-flex items-center justify-center" dangerouslySetInnerHTML={{ __html: img.icon }} />
-                            ) : (
-                              <Image src={img.icon} alt="" width={24} height={24} className="w-6 h-6 mr-2.5 rounded flex-shrink-0" unoptimized onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                            )
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{img.name}</p>
-                            <p className="text-[10px] text-gray-500 dark:text-gray-400 font-mono truncate">{img.image}</p>
-                          </div>
-                        </label>
-                      ))}
+          <label htmlFor="scratchImage" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Image</label>
+          {workspaceType === "scratch" ? (
+            <div className="space-y-3">
+              {scratchImages.length > 0 && (
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScratchImageMode("catalog");
+                      if (scratchImages[0]) chooseImage(scratchImages[0]);
+                    }}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                      scratchImageMode === "catalog"
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)] text-[var(--color-primary)]"
+                        : "border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400"
+                    }`}
+                  >
+                    Catalog Images ({scratchImages.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScratchImageMode("custom");
+                      setSelectedImage({
+                        cr_name: "scratch",
+                        name: "Scratch",
+                        image: scratchImage || "alpine",
+                        default_port: 80,
+                      });
+                    }}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                      scratchImageMode === "custom"
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)] text-[var(--color-primary)]"
+                        : "border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400"
+                    }`}
+                  >
+                    Custom Image
+                  </button>
+                </div>
+              )}
+
+              {scratchImages.length === 0 || scratchImageMode === "custom" ? (
+                <div>
+                  <input
+                    type="text"
+                    id="scratchImage"
+                    value={scratchImage}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setScratchImage(val);
+                      setSelectedImage({
+                        cr_name: "scratch",
+                        name: "Scratch",
+                        image: val || "alpine",
+                        default_port: 80,
+                      });
+                    }}
+                    placeholder="alpine"
+                    required
+                    className={inputClass}
+                  />
+                  <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">Container image for scratch deployment (e.g. alpine, ubuntu, busybox).</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {scratchImages.map((img) => (
+                    <label
+                      key={img.image}
+                      className={`flex items-center p-2.5 border rounded-md cursor-pointer transition-colors ${
+                        selectedImage?.image === img.image
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)]"
+                          : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                      }`}
+                    >
+                      <input type="radio" name="image" value={img.image} checked={selectedImage?.image === img.image} onChange={() => chooseImage(img)} className="sr-only" />
+                      {img.icon && (
+                        img.icon.trimStart().startsWith("<svg") ? (
+                          <span className="w-6 h-6 mr-2.5 rounded flex-shrink-0 inline-flex items-center justify-center" dangerouslySetInnerHTML={{ __html: img.icon }} />
+                        ) : (
+                          <Image src={img.icon} alt="" width={24} height={24} className="w-6 h-6 mr-2.5 rounded flex-shrink-0" unoptimized onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        )
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{img.name}</p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-mono truncate">{img.image}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            (() => {
+              // Group images by category (filtered to the selected workspace type)
+              const grouped: Record<string, WorkspaceImage[]> = {};
+              for (const img of filterImagesByType(images, workspaceType)) {
+                const cat = img.category || "Other";
+                if (!grouped[cat]) grouped[cat] = [];
+                grouped[cat].push(img);
+              }
+              // Sort categories: named categories first (alphabetically), "Other" last
+              const categories = Object.keys(grouped).sort((a, b) => {
+                if (a === "Other") return 1;
+                if (b === "Other") return -1;
+                return a.localeCompare(b);
+              });
+              return (
+                <div className="space-y-3">
+                  {categories.map((cat) => (
+                    <div key={cat}>
+                      <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">{cat}</p>
+                      <div className="space-y-1.5">
+                        {grouped[cat].map((img) => (
+                          <label
+                            key={img.image}
+                            className={`flex items-center p-2.5 border rounded-md cursor-pointer transition-colors ${
+                              selectedImage?.image === img.image
+                                ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)]"
+                                : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                            }`}
+                          >
+                            <input type="radio" name="image" value={img.image} checked={selectedImage?.image === img.image} onChange={() => chooseImage(img)} className="sr-only" />
+                            {img.icon && (
+                              img.icon.trimStart().startsWith("<svg") ? (
+                                <span className="w-6 h-6 mr-2.5 rounded flex-shrink-0 inline-flex items-center justify-center" dangerouslySetInnerHTML={{ __html: img.icon }} />
+                              ) : (
+                                <Image src={img.icon} alt="" width={24} height={24} className="w-6 h-6 mr-2.5 rounded flex-shrink-0" unoptimized onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              )
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{img.name}</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400 font-mono truncate">{img.image}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+                  ))}
+                </div>
+              );
+            })()
+          )}
         </div>
 
         <div>
