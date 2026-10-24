@@ -99,55 +99,6 @@ function NewWorkspaceForm() {
   const [scratchImageMode, setScratchImageMode] = useState<"catalog" | "custom">("catalog");
   const scratchImages = filterImagesByType(images, "scratch");
 
-  useEffect(() => {
-    if (workspaceType === "scratch") {
-      const sImages = filterImagesByType(images, "scratch");
-      if (sImages.length > 0 && scratchImageMode === "catalog") {
-        if (!selectedImage || !sImages.some((i) => i.image === selectedImage.image)) {
-          chooseImage(sImages[0]);
-        }
-      } else {
-        setSelectedImage({
-          cr_name: "scratch",
-          name: "Scratch",
-          image: scratchImage || "alpine",
-          default_port: 80,
-        });
-      }
-    }
-  }, [workspaceType, scratchImage, scratchImageMode, images]);
-
-  const isWindows = selectedImage?.vm_profile === "windows11-amd64-v1";
-  const [windowsNode, setWindowsNode] = useState("");
-  const [windowsGPUProfile, setWindowsGPUProfile] = useState("");
-  const [importSecret, setImportSecret] = useState("");
-  const [registryCA, setRegistryCA] = useState("");
-  const [rootStorageClass, setRootStorageClass] = useState("");
-  const [cpuRequest, setCpuRequest] = useState("500m");
-  const [memoryRequest, setMemoryRequest] = useState("512Mi");
-  const [cpuLimit, setCpuLimit] = useState("2");
-  const [memoryLimit, setMemoryLimit] = useState("2Gi");
-  const [selectedVolumes, setSelectedVolumes] = useState<{ name: string; mountPath: string; readonly?: boolean; isNew?: boolean; isAuto?: boolean; newSize?: string; newStorageClass?: string; newAccessMode?: string }[]>([]);
-
-  // Environment variables
-  const [envVars, setEnvVars] = useState<EnvVar[]>([]);
-
-  // Scheduling
-  const [selectedPreset, setSelectedPreset] = useState<string>("Default");
-  const [customTolerations, setCustomTolerations] = useState<Toleration[]>([]);
-  const [customNodeSelector, setCustomNodeSelector] = useState<{ key: string; value: string }[]>([]);
-
-  // GPU
-  const [gpuEnabled, setGpuEnabled] = useState(false);
-  const [gpuCount, setGpuCount] = useState("1");
-  const [gpuVendor, setGpuVendor] = useState("nvidia.com/gpu");
-
-  // Shared memory
-  const [shmEnabled, setShmEnabled] = useState(false);
-
-  // Image pull policy
-  const [imagePullPolicy, setImagePullPolicy] = useState("");
-
   // Form field locks (admin-controlled)
   const [fieldLocks, setFieldLocks] = useState<FormFieldLock[]>([]);
 
@@ -183,6 +134,83 @@ function NewWorkspaceForm() {
       setShmEnabled(image.default_shared_memory ?? false);
     }
   };
+
+  const handleWorkspaceTypeChange = (newType: "container" | "vm" | "scratch") => {
+    setWorkspaceType(newType);
+    if (workspaceType !== newType) setSelectedVolumes([]);
+    if (newType === "scratch") {
+      const sImages = filterImagesByType(images, "scratch");
+      if (sImages.length > 0 && scratchImageMode === "catalog") {
+        chooseImage(sImages[0]);
+      } else {
+        setSelectedImage({
+          cr_name: "scratch",
+          name: "Scratch",
+          image: scratchImage || "alpine",
+          default_port: 80,
+        });
+      }
+    } else {
+      const allowed = filterImagesByType(images, newType);
+      chooseImage(selectedImage && allowed.find((i) => i.image === selectedImage.image) ? selectedImage : allowed[0] || null);
+    }
+  };
+
+  const handleScratchImageChange = (val: string) => {
+    setScratchImage(val);
+    setSelectedImage({
+      cr_name: "scratch",
+      name: "Scratch",
+      image: val || "alpine",
+      default_port: 80,
+    });
+  };
+
+  const handleScratchModeChange = (mode: "catalog" | "custom") => {
+    setScratchImageMode(mode);
+    const sImages = filterImagesByType(images, "scratch");
+    if (mode === "catalog" && sImages.length > 0) {
+      chooseImage(sImages[0]);
+    } else {
+      setSelectedImage({
+        cr_name: "scratch",
+        name: "Scratch",
+        image: scratchImage || "alpine",
+        default_port: 80,
+      });
+    }
+  };
+
+  const isWindows = selectedImage?.vm_profile === "windows11-amd64-v1";
+  const [windowsNode, setWindowsNode] = useState("");
+  const [windowsGPUProfile, setWindowsGPUProfile] = useState("");
+  const [importSecret, setImportSecret] = useState("");
+  const [registryCA, setRegistryCA] = useState("");
+  const [rootStorageClass, setRootStorageClass] = useState("");
+  const [cpuRequest, setCpuRequest] = useState("500m");
+  const [memoryRequest, setMemoryRequest] = useState("512Mi");
+  const [cpuLimit, setCpuLimit] = useState("2");
+  const [memoryLimit, setMemoryLimit] = useState("2Gi");
+  const [selectedVolumes, setSelectedVolumes] = useState<{ name: string; mountPath: string; readonly?: boolean; isNew?: boolean; isAuto?: boolean; newSize?: string; newStorageClass?: string; newAccessMode?: string }[]>([]);
+
+  // Environment variables
+  const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+
+  // Scheduling
+  const [selectedPreset, setSelectedPreset] = useState<string>("Default");
+  const [customTolerations, setCustomTolerations] = useState<Toleration[]>([]);
+  const [customNodeSelector, setCustomNodeSelector] = useState<{ key: string; value: string }[]>([]);
+
+  // GPU
+  const [gpuEnabled, setGpuEnabled] = useState(false);
+  const [gpuCount, setGpuCount] = useState("1");
+  const [gpuVendor, setGpuVendor] = useState("nvidia.com/gpu");
+
+  // Shared memory
+  const [shmEnabled, setShmEnabled] = useState(false);
+
+  // Image pull policy
+  const [imagePullPolicy, setImagePullPolicy] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -416,28 +444,7 @@ function NewWorkspaceForm() {
               <button
                 key={t.value}
                 type="button"
-                onClick={() => {
-                  setWorkspaceType(t.value);
-                  if (workspaceType !== t.value) setSelectedVolumes([]);
-                  if (t.value === "scratch") {
-                    const sImages = filterImagesByType(images, "scratch");
-                    if (sImages.length > 0 && scratchImageMode === "catalog") {
-                      chooseImage(sImages[0]);
-                    } else {
-                      setSelectedImage({
-                        cr_name: "scratch",
-                        name: "Scratch",
-                        image: scratchImage || "alpine",
-                        default_port: 80,
-                      });
-                    }
-                  } else {
-                    // Re-pick the image from the newly-filtered list, keeping the
-                    // current selection if it still applies.
-                    const allowed = filterImagesByType(images, t.value);
-                    chooseImage(selectedImage && allowed.find((i) => i.image === selectedImage.image) ? selectedImage : allowed[0] || null);
-                  }
-                }}
+                onClick={() => handleWorkspaceTypeChange(t.value)}
                 className={`flex-1 px-2.5 py-2 rounded-md border text-left transition-colors ${
                   workspaceType === t.value
                     ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)]"
@@ -459,10 +466,7 @@ function NewWorkspaceForm() {
                 <div className="flex gap-2 mb-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setScratchImageMode("catalog");
-                      if (scratchImages[0]) chooseImage(scratchImages[0]);
-                    }}
+                    onClick={() => handleScratchModeChange("catalog")}
                     className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
                       scratchImageMode === "catalog"
                         ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)] text-[var(--color-primary)]"
@@ -473,15 +477,7 @@ function NewWorkspaceForm() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setScratchImageMode("custom");
-                      setSelectedImage({
-                        cr_name: "scratch",
-                        name: "Scratch",
-                        image: scratchImage || "alpine",
-                        default_port: 80,
-                      });
-                    }}
+                    onClick={() => handleScratchModeChange("custom")}
                     className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
                       scratchImageMode === "custom"
                         ? "border-[var(--color-primary)] bg-[var(--color-primary-subtle)] text-[var(--color-primary)]"
@@ -499,16 +495,7 @@ function NewWorkspaceForm() {
                     type="text"
                     id="scratchImage"
                     value={scratchImage}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setScratchImage(val);
-                      setSelectedImage({
-                        cr_name: "scratch",
-                        name: "Scratch",
-                        image: val || "alpine",
-                        default_port: 80,
-                      });
-                    }}
+                    onChange={(e) => handleScratchImageChange(e.target.value)}
                     placeholder="alpine"
                     required
                     className={inputClass}
