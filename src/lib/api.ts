@@ -291,6 +291,7 @@ export interface CreateWorkspacePayload {
     gpu_request?: string;
     gpu_vendor?: string;
     command?: string[];
+    args?: string[];
   };
   volume_mounts?: VolumeMount[];
   env?: EnvVar[];

@@ -207,6 +207,25 @@ describe("workspace volume creation", () => {
 });
 
 describe("scratch workspace creation", () => {
+  it("offers supported catalog images and submits an edited custom command", async () => {
+    vi.mocked(api.listImages).mockResolvedValue(images);
+    render(<NewWorkspacePage />);
+    const nameInput = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.change(nameInput, { target: { value: "scratch-command" } });
+    fireEvent.click(screen.getByRole("button", { name: /Scratch Deployment/ }));
+    expect(screen.getByRole("radio", { name: /Alpine Linux/ })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: /Code Studio/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Command/ })).toHaveValue("sleep infinity");
+    fireEvent.click(screen.getByRole("button", { name: "Custom Image" }));
+    expect(screen.getByRole("textbox", { name: "Image" })).toHaveValue("alpine");
+    fireEvent.change(screen.getByRole("textbox", { name: /Command/ }), { target: { value: "sleep 3600" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      type: "scratch", container: expect.objectContaining({ image: "alpine", command: ["sleep", "3600"] }),
+    })));
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/workspaces"));
+  });
+
   it("defaults to alpine image and sleep infinity command for scratch workspaces and launches successfully", async () => {
     render(<NewWorkspacePage />);
     const nameInput = await screen.findByRole("textbox", { name: "Name" });
