@@ -645,7 +645,7 @@ Edit
 
       {/* Tab content */}
       <div className="border border-gray-200 dark:border-gray-800 rounded-md">
-        {activeTab === "overview" && <OverviewTab workspace={workspace} images={images} crData={crData} isWindows={isWindows} />}
+        {activeTab === "overview" && <OverviewTab workspace={workspace} images={images} crData={crData} isWindows={isWindows} onWorkspaceUpdated={setWorkspace} />}
         {activeTab === "pod" && <PodTab podData={podData} />}
         {activeTab === "sessions" && isVM && <SessionsTab name={workspace.name} namespace={workspace.namespace} />}
         {activeTab === "metrics" && <MetricsTab data={metricsData} window={metricsWindow} onWindowChange={setMetricsWindow} error={metricsError} />}
@@ -722,7 +722,7 @@ Edit
   );
 }
 
-function OverviewTab({ workspace, images, crData, isWindows }: { workspace: Workspace; images: WorkspaceImage[]; crData: object | null; isWindows?: boolean }) {
+function OverviewTab({ workspace, images, crData, isWindows, onWorkspaceUpdated }: { workspace: Workspace; images: WorkspaceImage[]; crData: object | null; isWindows?: boolean; onWorkspaceUpdated?: (ws: Workspace) => void }) {
   const img = images.find((i) => i.image === workspace.image);
   const cs = workspace.container_state;
   const hasProblem = cs?.state === "waiting" && cs?.reason && ["Pending", "Unschedulable", "CreateContainerConfigError", "ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff"].includes(cs.reason);
@@ -913,7 +913,7 @@ function OverviewTab({ workspace, images, crData, isWindows }: { workspace: Work
       {isWindows && (
         <div className="mt-4 space-y-3">
           <WindowsCredentials key={`${workspace.namespace}/${workspace.name}/${workspace.provisioned}`} name={workspace.name} namespace={workspace.namespace} />
-          <WindowsGPUSettings key={`gpu/${workspace.namespace}/${workspace.name}/${workspace.vm_gpu_profile?.id || "software"}/${workspace.stopped}`} workspace={workspace} onUpdated={(updated) => setWorkspace(updated)} />
+          <WindowsGPUSettings key={`gpu/${workspace.namespace}/${workspace.name}/${workspace.vm_gpu_profile?.id || "software"}/${workspace.stopped}`} workspace={workspace} onUpdated={(updated) => onWorkspaceUpdated?.(updated)} />
         </div>
       )}
     </div>
