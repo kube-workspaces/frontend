@@ -222,43 +222,6 @@ export default function TerminalModal({
             <span className="text-xs text-gray-500">({namespace})</span>
           </div>
           <div className="flex items-center gap-1">
-            {/* VM workspaces: switch between serial / SSH / graphical display */}
-            {isVM && mode !== "display" && (
-              <button
-                onClick={() => setMode("display")}
-                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
-                title="Open graphical display (noVNC)"
-              >
-                Display
-              </button>
-            )}
-            {isVM && !windowsGuest && mode === "display" && (
-              <button
-                onClick={() => setMode("serial")}
-                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
-                title="Back to serial console"
-              >
-                Console
-              </button>
-            )}
-            {isVM && !windowsGuest && mode !== "ssh" && (
-              <button
-                onClick={() => setMode("ssh")}
-                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
-                title="SSH console"
-              >
-                SSH
-              </button>
-            )}
-            {isVM && !windowsGuest && mode === "ssh" && (
-              <button
-                onClick={() => setMode("serial")}
-                className="px-2 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded transition-colors"
-                title="Back to serial console"
-              >
-                Console
-              </button>
-            )}
             {/* Maximize/Restore */}
             <button
               onClick={() => setIsMaximized(!isMaximized)}
