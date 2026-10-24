@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import ImageIcon from "@/components/image-icon";
 import { listImages, createImage, getImageCR, listWorkspaces, WorkspaceImage, CreateImagePayload, Workspace } from "@/lib/api";
 import yaml from "yaml";
 
@@ -740,38 +741,6 @@ function ShowJsonButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function IconBadge({ icon, size = 12, className = "" }: { icon: string; size?: number; className?: string }) {
-  const isSvg = icon.trimStart().startsWith("<svg");
-  const isUrl = icon.startsWith("http://") || icon.startsWith("https://");
-  const px = Math.round(size * 0.25);
-  const padClass = `p-[${px}px]`;
-
-  if (isSvg) {
-    return (
-      <span
-        className={`inline-flex items-center justify-center rounded bg-gray-100 dark:bg-gray-800 ${padClass} ${className}`}
-        dangerouslySetInnerHTML={{ __html: icon }}
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-
-  if (isUrl) {
-    return (
-      <span className={`inline-flex items-center justify-center rounded bg-gray-100 dark:bg-gray-800 ${padClass} ${className}`} style={{ width: size, height: size }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={icon} alt="" width={size} height={size} style={{ width: 'auto', height: 'auto', maxWidth: size, maxHeight: size }} />
-      </span>
-    );
-  }
-
-  return (
-    <span className={`px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 ${className}`} style={{ fontSize: size * 0.75 }}>
-      {icon}
-    </span>
-  );
-}
-
 const HOME_ICON = (
   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
@@ -824,8 +793,8 @@ function ImageTileCard({
       onClick={() => router.push(`/images/${img.cr_name}`)}
       className="relative border border-gray-200 dark:border-gray-800 rounded-md p-4 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex flex-col h-full cursor-pointer"
     >
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <Link href={`/images/${img.cr_name}`} onClick={(e) => e.stopPropagation()} className="text-sm font-medium text-gray-900 dark:text-white hover:text-[var(--color-primary)] transition-colors">
             {img.name}
           </Link>
@@ -835,7 +804,7 @@ function ImageTileCard({
             </p>
           )}
         </div>
-        {img.icon && <IconBadge icon={img.icon} size={36} />}
+        {img.icon && <ImageIcon icon={img.icon} size={48} />}
       </div>
       <dl className="mt-3 space-y-1.5 text-xs flex-1">
         <div>
@@ -989,12 +958,12 @@ function ImageListRow({
       className="relative border border-gray-200 dark:border-gray-800 rounded-md px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer"
     >
       <div className="flex items-center gap-4">
+        {img.icon && <ImageIcon icon={img.icon} />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Link href={`/images/${img.cr_name}`} onClick={(e) => e.stopPropagation()} className="text-sm font-medium text-gray-900 dark:text-white hover:text-[var(--color-primary)] transition-colors truncate">
               {img.name}
             </Link>
-            {img.icon && <IconBadge icon={img.icon} className="text-[10px]" />}
           </div>
           {img.description && (
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">
@@ -1032,7 +1001,7 @@ function ImageCompactCard({
           {img.name}
         </Link>
         <div className="flex items-center gap-1 shrink-0">
-          {img.icon && <IconBadge icon={img.icon} className="text-[10px]" />}
+          {img.icon && <ImageIcon icon={img.icon} size={24} />}
           <LaunchLink image={img.image} />
         </div>
       </div>

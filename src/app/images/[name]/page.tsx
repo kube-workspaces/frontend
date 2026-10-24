@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import ImageIcon from "@/components/image-icon";
 import { listImages, listWorkspaces, getImageCR, WorkspaceImage, Workspace } from "@/lib/api";
 import { stringify as yamlStringify } from "yaml";
 
@@ -83,7 +84,7 @@ export default function ImageDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {image.icon && <IconBadge icon={image.icon} size={40} />}
+          {image.icon && <ImageIcon icon={image.icon} size={56} />}
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-gray-900 dark:text-white">{image.name}</h1>
@@ -457,38 +458,6 @@ function JsonModal({
         </pre>
       </div>
     </div>
-  );
-}
-
-function IconBadge({ icon, size = 12, className = "" }: { icon: string; size?: number; className?: string }) {
-  const isSvg = icon.trimStart().startsWith("<svg");
-  const isUrl = icon.startsWith("http://") || icon.startsWith("https://");
-  const px = Math.round(size * 0.25);
-  const padClass = `p-[${px}px]`;
-
-  if (isSvg) {
-    return (
-      <span
-        className={`inline-flex items-center justify-center rounded bg-gray-100 dark:bg-gray-800 ${padClass} ${className}`}
-        dangerouslySetInnerHTML={{ __html: icon }}
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-
-  if (isUrl) {
-    return (
-      <span className={`inline-flex items-center justify-center rounded bg-gray-100 dark:bg-gray-800 ${padClass} ${className}`} style={{ width: size, height: size }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={icon} alt="" width={size} height={size} style={{ width: 'auto', height: 'auto', maxWidth: size, maxHeight: size }} />
-      </span>
-    );
-  }
-
-  return (
-    <span className={`px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 ${className}`} style={{ fontSize: size * 0.75 }}>
-      {icon}
-    </span>
   );
 }
 
