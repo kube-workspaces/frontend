@@ -13,4 +13,5 @@ export const images: WorkspaceImage[] = [
   { cr_name: "linux-desktop", name: "Linux Desktop", image: workspaces[1].image, description: "A complete Linux desktop in your browser", default_port: 8080, default_path: "/", category: "Desktop" },
   { cr_name: "notebook", name: "Research Notebook", image: workspaces[2].image, description: "An interactive environment for data and discovery", default_port: 8888, default_path: "/lab", category: "Development" },
   { cr_name: "ubuntu-vm", name: "Ubuntu VM", image: workspaces[3].image, description: "A persistent virtual machine workspace", default_port: 22, category: "Virtual Machine", workspace_types: ["vm"] },
+  { cr_name: "alpine", name: "Alpine Linux", image: "alpine:latest", description: "Minimal Alpine Linux scratch workspace", default_port: 80, category: "Scratch", workspace_types: ["scratch"], default_args: ["sleep", "infinity"] },
 ];

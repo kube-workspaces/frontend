@@ -97,6 +97,7 @@ function NewWorkspaceForm() {
   const [selectedImage, setSelectedImage] = useState<WorkspaceImage | null>(null);
   const [scratchImage, setScratchImage] = useState("alpine");
   const [scratchImageMode, setScratchImageMode] = useState<"catalog" | "custom">("catalog");
+  const [command, setCommand] = useState("sleep infinity");
   const scratchImages = filterImagesByType(images, "scratch");
 
   // Form field locks (admin-controlled)
@@ -132,6 +133,9 @@ function NewWorkspaceForm() {
     } else if (image) {
       setSelectedVolumes((v) => applyHomeVolume(image, name, v));
       setShmEnabled(image.default_shared_memory ?? false);
+      if (image.default_args && image.default_args.length > 0) {
+        setCommand(image.default_args.join(" "));
+      }
     }
   };
 
@@ -339,6 +343,7 @@ function NewWorkspaceForm() {
           cpu_limit: cpuLimit,
           memory_limit: memoryLimit,
           ...(!isWindows && gpuEnabled && gpuCount ? { gpu_request: gpuCount, gpu_vendor: gpuVendor } : {}),
+          ...(workspaceType === "scratch" && command.trim() ? { command: command.trim().split(/\s+/) } : {}),
         },
         volume_mounts: volumeMounts,
         ...(filteredEnv.length > 0 ? { env: filteredEnv } : {}),
@@ -582,6 +587,21 @@ function NewWorkspaceForm() {
             })()
           )}
         </div>
+
+        {workspaceType === "scratch" && (
+          <div>
+            <label htmlFor="scratchCommand" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Command (arguments)</label>
+            <input
+              type="text"
+              id="scratchCommand"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="sleep infinity"
+              className={inputClass}
+            />
+            <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">Command passed to the container (space-separated, e.g. sleep infinity).</p>
+          </div>
+        )}
 
         <div>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Resources</label>

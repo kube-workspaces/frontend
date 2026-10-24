@@ -207,19 +207,22 @@ describe("workspace volume creation", () => {
 });
 
 describe("scratch workspace creation", () => {
-  it("defaults to alpine image for scratch workspaces and launches successfully", async () => {
+  it("defaults to alpine image and sleep infinity command for scratch workspaces and launches successfully", async () => {
     render(<NewWorkspacePage />);
     const nameInput = await screen.findByRole("textbox", { name: "Name" });
     fireEvent.change(nameInput, { target: { value: "myscratch" } });
     fireEvent.click(screen.getByRole("button", { name: /Scratch/ }));
     const imageInput = screen.getByRole("textbox", { name: "Image" });
     expect(imageInput).toHaveValue("alpine");
+    const commandInput = screen.getByRole("textbox", { name: /Command/ });
+    expect(commandInput).toHaveValue("sleep infinity");
     fireEvent.submit(nameInput.closest("form")!);
     await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({
       name: "myscratch",
       type: "scratch",
       container: expect.objectContaining({
         image: "alpine",
+        command: ["sleep", "infinity"],
       }),
     })));
   });

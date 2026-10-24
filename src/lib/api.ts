@@ -290,6 +290,7 @@ export interface CreateWorkspacePayload {
     memory_limit: string;
     gpu_request?: string;
     gpu_vendor?: string;
+    command?: string[];
   };
   volume_mounts?: VolumeMount[];
   env?: EnvVar[];
@@ -392,6 +393,7 @@ export interface WorkspaceImage {
   default_image_pull_policy?: string;
   default_shared_memory?: boolean;
   workspace_types?: string[];
+  default_args?: string[];
   links?: ImageLink[];
   default_credentials?: ImageCredentials;
   vm_profile?: string;
