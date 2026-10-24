@@ -45,7 +45,7 @@ const TerminalModal = dynamic(() => import("@/components/terminal-modal"), {
   ssr: false,
 });
 
-type Tab = "overview" | "pod" | "metrics" | "logs" | "events" | "yaml";
+type Tab = "overview" | "pod" | "sessions" | "metrics" | "logs" | "events" | "yaml";
 
 export default function WorkspaceDetailPage() {
   const params = useParams();
@@ -453,6 +453,7 @@ export default function WorkspaceDetailPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "pod", label: "Pod" },
+    ...(isVM ? [{ id: "sessions" as Tab, label: "Sessions" }] : []),
     ...(isVM ? [] : [{ id: "metrics" as Tab, label: "Metrics" }]),
     { id: "logs", label: "Logs" },
     { id: "events", label: "Events" },
@@ -644,8 +645,9 @@ Edit
 
       {/* Tab content */}
       <div className="border border-gray-200 dark:border-gray-800 rounded-md">
-        {activeTab === "overview" && <OverviewTab workspace={workspace} images={images} crData={crData} />}
+        {activeTab === "overview" && <OverviewTab workspace={workspace} images={images} crData={crData} isWindows={isWindows} />}
         {activeTab === "pod" && <PodTab podData={podData} />}
+        {activeTab === "sessions" && isVM && <SessionsTab name={workspace.name} namespace={workspace.namespace} />}
         {activeTab === "metrics" && <MetricsTab data={metricsData} window={metricsWindow} onWindowChange={setMetricsWindow} error={metricsError} />}
         {activeTab === "logs" && <LogsTab logs={logs} onRefresh={fetchLogs} />}
         {activeTab === "events" && <EventsTab events={events} onRefresh={fetchEvents} />}
@@ -705,9 +707,6 @@ Edit
         rebooting={actionLoading}
       />
 
-      {isWindows && <WindowsCredentials key={`${workspace.namespace}/${workspace.name}/${workspace.provisioned}`} name={workspace.name} namespace={workspace.namespace} />}
-      {isWindows && <WindowsGPUSettings key={`gpu/${workspace.namespace}/${workspace.name}/${workspace.vm_gpu_profile?.id || "software"}/${workspace.stopped}`} workspace={workspace} onUpdated={setWorkspace} />}
-      {workspace.type === "vm" && <WorkspaceSessions name={workspace.name} namespace={workspace.namespace} />}
       {terminalOpen && workspace && (
         <TerminalModal
           workspaceName={workspace.name}
@@ -723,7 +722,7 @@ Edit
   );
 }
 
-function OverviewTab({ workspace, images, crData }: { workspace: Workspace; images: WorkspaceImage[]; crData: object | null }) {
+function OverviewTab({ workspace, images, crData, isWindows }: { workspace: Workspace; images: WorkspaceImage[]; crData: object | null; isWindows?: boolean }) {
   const img = images.find((i) => i.image === workspace.image);
   const cs = workspace.container_state;
   const hasProblem = cs?.state === "waiting" && cs?.reason && ["Pending", "Unschedulable", "CreateContainerConfigError", "ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff"].includes(cs.reason);
@@ -910,6 +909,21 @@ function OverviewTab({ workspace, images, crData }: { workspace: Workspace; imag
           </div>
         )}
       </dl>
+
+      {isWindows && (
+        <div className="mt-4 space-y-3">
+          <WindowsCredentials key={`${workspace.namespace}/${workspace.name}/${workspace.provisioned}`} name={workspace.name} namespace={workspace.namespace} />
+          <WindowsGPUSettings key={`gpu/${workspace.namespace}/${workspace.name}/${workspace.vm_gpu_profile?.id || "software"}/${workspace.stopped}`} workspace={workspace} onUpdated={(updated) => setWorkspace(updated)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SessionsTab({ name, namespace }: { name: string; namespace: string }) {
+  return (
+    <div className="p-4">
+      <WorkspaceSessions name={name} namespace={namespace} />
     </div>
   );
 }
