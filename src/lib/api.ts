@@ -568,17 +568,34 @@ export async function rebootWorkspace(name: string, namespace: string = "workspa
   }
 }
 
-export async function checkSerialConsoleInUse(
+export interface VMConsoleStatus {
+  inUse: boolean;
+  available: boolean;
+  displayAvailable: boolean;
+}
+
+export async function getVMConsoleStatus(
   name: string,
   namespace: string = "workspaces"
-): Promise<boolean> {
+): Promise<VMConsoleStatus> {
   const res = await fetch(`${API_BASE}/v1/workspaces/${name}/console/status?namespace=${namespace}`, {
     cache: "no-store",
     credentials: "include",
   });
   if (!res.ok) throw await apiError(res, "Failed to check serial console");
   const data = await res.json();
-  return data.inUse === true;
+  return {
+    inUse: data.inUse === true,
+    available: data.available === true,
+    displayAvailable: data.displayAvailable === true,
+  };
+}
+
+export async function checkSerialConsoleInUse(
+  name: string,
+  namespace: string = "workspaces"
+): Promise<boolean> {
+  return (await getVMConsoleStatus(name, namespace)).inUse;
 }
 
 export async function takeOverSerialConsole(

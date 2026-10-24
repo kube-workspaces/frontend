@@ -13,6 +13,7 @@ import WorkspaceExec from "@/components/workspace-exec";
 import ConnectModal from "@/components/connect-modal";
 import {
   getWorkspace,
+  getVMConsoleStatus,
   getWorkspaceLogs,
   getWorkspaceEvents,
   getWorkspacePod,
@@ -99,6 +100,8 @@ export default function WorkspaceDetailPage() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [terminalMode, setTerminalMode] = useState<"serial" | "ssh" | "display">("serial");
+  const [terminalRecovery, setTerminalRecovery] = useState(false);
+  const [consoleStatus, setConsoleStatus] = useState<{ key: string; available: boolean; displayAvailable: boolean } | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [rebootDialogOpen, setRebootDialogOpen] = useState(false);
 
@@ -111,6 +114,13 @@ export default function WorkspaceDetailPage() {
       setWorkspace(ws);
       setImages(imgs || []);
       setError(null);
+      setLoading(false);
+      if (ws?.type === "vm" && !ws.stopped && ws.ready_replicas === 0) {
+        const status = await getVMConsoleStatus(name, namespace).catch(() => null);
+        setConsoleStatus(status ? { key: `${namespace}/${name}`, ...status } : null);
+      } else {
+        setConsoleStatus(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch workspace");
     } finally {
@@ -450,6 +460,9 @@ export default function WorkspaceDetailPage() {
 
   const isVM = workspace.type === "vm";
   const isWindows = workspace.vm_profile === "windows11-amd64-v1";
+  const currentConsoleStatus = consoleStatus?.key === `${workspace.namespace}/${workspace.name}` ? consoleStatus : null;
+  const displayAvailable = workspace.ready_replicas > 0 || currentConsoleStatus?.displayAvailable === true;
+  const serialAvailable = workspace.ready_replicas > 0 || currentConsoleStatus?.available === true;
   // VM workspaces have no pod metrics and no web UI to connect to yet; the
   // console is their access path. Show the tabs that still work.
   const tabs: { id: Tab; label: string }[] = [
@@ -493,28 +506,32 @@ export default function WorkspaceDetailPage() {
               Connect
             </button>
           )}
-          {isVM && (workspace.ready_replicas > 0 || isWindows) && !workspace.stopped && (
+          {isVM && !workspace.stopped && (
             <button
+              disabled={!displayAvailable}
               onClick={() => {
                 setTerminalMode("display");
+                setTerminalRecovery(workspace.ready_replicas === 0);
                 setTerminalOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-[var(--color-primary)] hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              title="Open the graphical display (noVNC)"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-[var(--color-primary)] hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={displayAvailable ? "Open the graphical display (noVNC)" : "Waiting for the VM display console to become available"}
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.5a3 3 0 00-3 3h12a3 3 0 00-3-3v-1.5M6 20.25h12M6 3.75h12a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H6a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5z" />
               </svg>
-              Connect
+              {workspace.ready_replicas > 0 ? "Connect" : "Display console"}
             </button>
           )}
-          {!isWindows && workspace.ready_replicas > 0 && !workspace.stopped && (
+          {!isWindows && (isVM || workspace.ready_replicas > 0) && !workspace.stopped && (
             <button
+              disabled={isVM && !serialAvailable}
+              title={isVM && !serialAvailable ? "Waiting for the VM serial console to become available" : "Open the serial console"}
               onClick={() => {
                 setTerminalMode("serial");
                 setTerminalOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
@@ -724,6 +741,7 @@ Edit
           isVM={workspace.type === "vm"}
           windowsGuest={isWindows}
           initialMode={terminalMode}
+          initialDisplayKind={terminalRecovery ? "console" : undefined}
           sshDefaultUser={images.find((i) => i.image === workspace.image)?.default_user}
           onClose={() => setTerminalOpen(false)}
         />

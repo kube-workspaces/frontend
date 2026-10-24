@@ -20,6 +20,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   stopWorkspace: vi.fn(), listWorkspaces: vi.fn(),
   listVolumes: vi.fn(), listNamespaces: vi.fn(), getPlatformConfig: vi.fn(),
   createWorkspace: vi.fn(), createVolume: vi.fn(), updateWorkspace: vi.fn(),
+  getVMConsoleStatus: vi.fn(),
 }));
 
 let snapshot: (items: api.Workspace[]) => void;
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.mocked(api.createWorkspace).mockResolvedValue(workspaces[0]);
   vi.mocked(api.createVolume).mockResolvedValue({ name: "test-home", namespace: "demo" } as api.Volume);
   vi.mocked(api.updateWorkspace).mockResolvedValue(workspaces[0]);
+  vi.mocked(api.getVMConsoleStatus).mockResolvedValue({ inUse: false, available: false, displayAvailable: false });
 });
 
 describe("workspace list", () => {
@@ -79,6 +81,36 @@ describe("workspace list", () => {
 });
 
 describe("workspace detail", () => {
+  it("enables a Starting VM's consoles only after backend availability is known", async () => {
+    vi.mocked(api.getWorkspace).mockResolvedValue({ ...workspaces[0], type: "vm", ready_replicas: 0 });
+    let available!: (status: api.VMConsoleStatus) => void;
+    vi.mocked(api.getVMConsoleStatus).mockReturnValue(new Promise((resolve) => { available = resolve; }));
+    render(<WorkspaceDetailPage />);
+    expect(await screen.findByRole("button", { name: "Display console" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Console", exact: true })).toBeDisabled();
+    await act(async () => available({ inUse: false, available: true, displayAvailable: true }));
+    expect(screen.getByRole("button", { name: "Display console" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Console", exact: true })).toBeEnabled();
+    expect(screen.getAllByText("Starting").length).toBeGreaterThan(0);
+  });
+
+  it("does not enable boot consoles when the VMI is unavailable", async () => {
+    vi.mocked(api.getWorkspace).mockResolvedValue({ ...workspaces[0], type: "vm", ready_replicas: 0 });
+    render(<WorkspaceDetailPage />);
+    expect(await screen.findByRole("button", { name: "Display console" })).toBeDisabled();
+    await waitFor(() => expect(api.getVMConsoleStatus).toHaveBeenCalledWith("code-studio", "demo"));
+    expect(screen.getByRole("button", { name: "Console", exact: true })).toBeDisabled();
+  });
+
+  it("keeps stopped VMs' consoles hidden", async () => {
+    vi.mocked(api.getWorkspace).mockResolvedValue({ ...workspaces[0], type: "vm", stopped: true, ready_replicas: 0 });
+    render(<WorkspaceDetailPage />);
+    await screen.findByRole("heading", { name: "code-studio" });
+    expect(screen.queryByRole("button", { name: "Display console" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Console", exact: true })).not.toBeInTheDocument();
+    expect(api.getVMConsoleStatus).not.toHaveBeenCalled();
+  });
+
   it("preserves a read-only mount on edit and sends explicit false when made writable", async () => {
     vi.mocked(api.getWorkspace).mockResolvedValue({ ...workspaces[0], volume_mounts: [{ name: "data", mount_path: "/data", readonly: true }] });
     render(<WorkspaceDetailPage />);

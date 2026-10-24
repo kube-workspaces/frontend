@@ -16,6 +16,7 @@ interface TerminalModalProps {
   isVM?: boolean;
   windowsGuest?: boolean;
   initialMode?: "serial" | "ssh" | "display";
+  initialDisplayKind?: "premium" | "console";
   /** Guest login hinted to the SSH credential form (usually the image's default user). */
   sshDefaultUser?: string;
 }
@@ -27,6 +28,7 @@ export default function TerminalModal({
   isVM = false,
   windowsGuest = false,
   initialMode = "serial",
+  initialDisplayKind,
   sshDefaultUser,
 }: TerminalModalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -39,8 +41,8 @@ export default function TerminalModal({
   const [sshPrivateKey, setSshPrivateKey] = useState("");
   // Shared premium/console selector: Windows guests default to the premium
   // agent viewer; every other VM defaults to the console VNC path.
-  const [displayKind, setDisplayKind] = useState<"premium" | "console" | "observe">(windowsGuest ? "premium" : "console");
-  const displayKindManual = useRef(false);
+  const [displayKind, setDisplayKind] = useState<"premium" | "console" | "observe">(initialDisplayKind ?? (windowsGuest ? "premium" : "console"));
+  const displayKindManual = useRef(initialDisplayKind !== undefined);
   const [premiumConnected, setPremiumConnected] = useState(false);
   const [vncConnected, setVncConnected] = useState(false);
   // Footer slot for the premium viewer's status widgets (clipboard,
