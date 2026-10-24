@@ -92,12 +92,16 @@ describe("workspace detail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() => expect(api.updateWorkspace).toHaveBeenLastCalledWith("code-studio", expect.objectContaining({ volume_mounts: [{ name: "data", mount_path: "/data", readonly: false }] }), "demo"));
   });
-  it("renders loading followed by the selected workspace and its proxy link", async () => {
+  it("renders loading followed by the selected workspace and opens its app in a modal", async () => {
     render(<WorkspaceDetailPage />);
     expect(screen.getByText("Loading workspace...")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "code-studio" })).toBeInTheDocument();
     expect(api.getWorkspace).toHaveBeenCalledWith("code-studio", "demo");
-    expect(screen.getByRole("link", { name: "Connect" })).toHaveAttribute("href", "/proxy/demo/code-studio/");
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(screen.getByRole("dialog", { name: "Connect: code-studio" })).toBeInTheDocument();
+    expect(screen.getByTitle("Workspace app: code-studio")).toHaveAttribute("src", "/proxy/demo/code-studio/");
+    fireEvent.click(screen.getByRole("button", { name: "Close (Ctrl+Esc)" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("displays the request error instead of misreporting every failure as not found", async () => {
@@ -105,6 +109,29 @@ describe("workspace detail", () => {
     render(<WorkspaceDetailPage />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Failed to get workspace: Forbidden");
     expect(screen.queryByText("Workspace not found.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the app mounted through maximize and minimize, and can open it in a new tab", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    vi.mocked(api.listImages).mockResolvedValue([{ ...images[0], image: workspaces[0].image, default_path: "/files/" }]);
+    render(<WorkspaceDetailPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
+    const frame = screen.getByTitle("Workspace app: code-studio");
+    expect(frame).toHaveAttribute("src", "/proxy/demo/code-studio/files/");
+    expect(open).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Maximize" }));
+    expect(screen.getByRole("dialog")).toHaveClass("fixed", "inset-0");
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    expect(screen.getByRole("dialog")).not.toHaveClass("fixed");
+    fireEvent.click(screen.getByRole("button", { name: "Minimize" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(frame).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Raise (restore)" }));
+    expect(screen.getByTitle("Workspace app: code-studio")).toBe(frame);
+    fireEvent.click(screen.getByRole("button", { name: "Open in new tab" }));
+    expect(open).toHaveBeenCalledWith("/proxy/demo/code-studio/files/", "_blank", "noopener,noreferrer");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    open.mockRestore();
   });
 
   it("retains a useful empty detail state", async () => {
@@ -120,7 +147,7 @@ describe("workspace detail", () => {
     render(<WorkspaceDetailPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Start" }));
     await waitFor(() => expect(api.startWorkspace).toHaveBeenCalledWith("code-studio", "demo"));
-    expect(await screen.findByRole("link", { name: "Connect" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Connect" })).toBeInTheDocument();
   });
 });
 

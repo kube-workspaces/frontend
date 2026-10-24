@@ -10,6 +10,7 @@ import WindowsCredentials from "@/components/windows-credentials";
 import WindowsGPUSettings from "@/components/windows-gpu-settings";
 import WorkspaceSessions from "@/components/workspace-sessions";
 import WorkspaceExec from "@/components/workspace-exec";
+import ConnectModal from "@/components/connect-modal";
 import {
   getWorkspace,
   getWorkspaceLogs,
@@ -96,6 +97,7 @@ export default function WorkspaceDetailPage() {
   const [metricsWindow, setMetricsWindow] = useState("1h");
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [terminalMode, setTerminalMode] = useState<"serial" | "ssh" | "display">("serial");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [rebootDialogOpen, setRebootDialogOpen] = useState(false);
@@ -481,17 +483,15 @@ export default function WorkspaceDetailPage() {
         <div className="flex items-center gap-1">
           <WorkspaceExec key={`${workspace.namespace}/${workspace.name}`} workspace={workspace} />
           {workspace.type !== "vm" && workspace.ready_replicas > 0 && !workspace.stopped && (
-            <a
-              href={getConnectUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => setConnectOpen(true)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded text-gray-600 dark:text-gray-300 hover:text-[var(--color-primary)] hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.5a3 3 0 00-3 3h12a3 3 0 00-3-3v-1.5M6 20.25h12M6 3.75h12a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H6a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5z" />
               </svg>
               Connect
-            </a>
+            </button>
           )}
           {isVM && (workspace.ready_replicas > 0 || isWindows) && !workspace.stopped && (
             <button
@@ -706,6 +706,16 @@ Edit
         onCancel={() => setRebootDialogOpen(false)}
         rebooting={actionLoading}
       />
+
+      {connectOpen && !isVM && (
+        <ConnectModal
+          key={`${workspace.namespace}/${workspace.name}`}
+          workspaceName={workspace.name}
+          namespace={workspace.namespace}
+          url={getConnectUrl()}
+          onClose={() => setConnectOpen(false)}
+        />
+      )}
 
       {terminalOpen && workspace && (
         <TerminalModal
