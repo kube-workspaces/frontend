@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createImageRepository } from "@/lib/api";
+import RepositoryPathsEditor, { normalizeRepositoryPaths } from "@/components/repository-paths-editor";
 
 export default function NewImageRepositoryPage() {
   const router = useRouter();
@@ -10,7 +11,7 @@ export default function NewImageRepositoryPage() {
     name: "",
     url: "",
     ref: "main",
-    paths: "images/",
+    paths: ["images"],
     authType: "",
     secretName: "",
     syncInterval: "",
@@ -23,10 +24,7 @@ export default function NewImageRepositoryPage() {
     setSaving(true);
     setError(null);
     try {
-      const pathsArr = form.paths
-        .split(/[\n,]+/)
-        .map((p) => p.trim())
-        .filter((p) => p.length > 0);
+      const pathsArr = normalizeRepositoryPaths(form.paths);
       const obj: Record<string, unknown> = {
         apiVersion: "kubeworkspaces.io/v1alpha1",
         kind: "ImageRepository",
@@ -34,7 +32,7 @@ export default function NewImageRepositoryPage() {
         spec: {
           url: form.url,
           ref: form.ref || "main",
-          paths: pathsArr.length > 0 ? pathsArr : ["images/"],
+          paths: pathsArr,
         },
       };
       if (form.syncInterval) {
@@ -112,14 +110,7 @@ export default function NewImageRepositoryPage() {
               />
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Paths (comma separated)</label>
-            <input
-              value={form.paths}
-              onChange={(e) => setForm({ ...form, paths: e.target.value })}
-              className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
-            />
-          </div>
+          <RepositoryPathsEditor paths={form.paths} onChange={(paths) => setForm({ ...form, paths })} />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { listImageRepositories, syncImageRepository, deleteImageRepository } from "@/lib/api";
+import RepositoryPathsEditor, { normalizeRepositoryPaths } from "@/components/repository-paths-editor";
 
 interface ImageRepository {
   metadata?: { name: string };
@@ -199,7 +200,7 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
     name: "",
     url: "",
     ref: "main",
-    paths: "images/",
+    paths: ["images"],
     authType: "",
     secretName: "",
     syncInterval: "",
@@ -212,10 +213,7 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
     setSaving(true);
     setError(null);
     try {
-      const pathsArr = form.paths
-        .split(/[\n,]+/)
-        .map((p) => p.trim())
-        .filter((p) => p.length > 0);
+      const pathsArr = normalizeRepositoryPaths(form.paths);
       const obj: Record<string, unknown> = {
         apiVersion: "kubeworkspaces.io/v1alpha1",
         kind: "ImageRepository",
@@ -223,7 +221,7 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
         spec: {
           url: form.url,
           ref: form.ref || "main",
-          paths: pathsArr.length > 0 ? pathsArr : ["images/"],
+          paths: pathsArr,
         },
       };
       if (form.syncInterval) {
@@ -245,7 +243,7 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-950 rounded-lg w-full max-w-lg border border-gray-200 dark:border-gray-800 shadow-xl">
+      <div className="bg-white dark:bg-gray-950 rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-800 shadow-xl">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Add Image Repository</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">×</button>
@@ -289,14 +287,7 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
               />
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Paths</label>
-            <input
-              value={form.paths}
-              onChange={(e) => setForm({ ...form, paths: e.target.value })}
-              className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
-            />
-          </div>
+          <RepositoryPathsEditor paths={form.paths} onChange={(paths) => setForm({ ...form, paths })} />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>

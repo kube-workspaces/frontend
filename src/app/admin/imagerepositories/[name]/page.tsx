@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getImageRepository, updateImageRepository, deleteImageRepository, syncImageRepository } from "@/lib/api";
+import RepositoryPathsEditor, { normalizeRepositoryPaths } from "@/components/repository-paths-editor";
 
 interface ImageRepository {
   apiVersion?: string;
@@ -38,7 +39,7 @@ export default function ImageRepositoryDetailPage() {
   const [form, setForm] = useState({
     url: "",
     ref: "main",
-    paths: "images/",
+    paths: ["images"],
     authType: "",
     secretName: "",
     syncInterval: "",
@@ -55,11 +56,11 @@ export default function ImageRepositoryDetailPage() {
         const data = (await getImageRepository(name)) as ImageRepository;
         if (!cancelled) {
           setObj(data);
-          const paths = Array.isArray(data.spec?.paths) ? data.spec.paths.join(", ") : data.spec?.paths || "images/";
+          const paths = data.spec?.paths?.length ? data.spec.paths : ["images"];
           setForm({
             url: data.spec?.url || "",
             ref: data.spec?.ref || "main",
-            paths: paths as string,
+            paths,
             authType: data.spec?.auth?.type || "",
             secretName: data.spec?.auth?.secretRef?.name || "",
             syncInterval: data.spec?.syncInterval || "",
@@ -87,10 +88,7 @@ export default function ImageRepositoryDetailPage() {
     setSaving(true);
     setError(null);
     try {
-      const pathsArr = form.paths
-        .split(/[\n,]+/)
-        .map((p) => p.trim())
-        .filter((p) => p.length > 0);
+      const pathsArr = normalizeRepositoryPaths(form.paths);
       const updated: ImageRepository = JSON.parse(JSON.stringify(obj || {}));
       updated.apiVersion = updated.apiVersion || "kubeworkspaces.io/v1alpha1";
       updated.kind = updated.kind || "ImageRepository";
@@ -99,7 +97,7 @@ export default function ImageRepositoryDetailPage() {
       updated.spec = updated.spec || {};
       updated.spec.url = form.url;
       updated.spec.ref = form.ref || "main";
-      updated.spec.paths = pathsArr.length > 0 ? pathsArr : ["images/"];
+      updated.spec.paths = pathsArr;
       updated.spec.suspend = form.suspend;
       if (form.syncInterval) {
         updated.spec.syncInterval = form.syncInterval;
@@ -115,6 +113,7 @@ export default function ImageRepositoryDetailPage() {
       // reload
       const data = (await getImageRepository(name)) as ImageRepository;
       setObj(data);
+      setForm((current) => ({ ...current, paths: data.spec?.paths?.length ? data.spec.paths : ["images"] }));
       alert("Saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save image repository");
@@ -229,15 +228,7 @@ export default function ImageRepositoryDetailPage() {
                 />
               </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Paths (comma separated)</label>
-              <input
-                type="text"
-                value={form.paths}
-                onChange={(e) => setForm({ ...form, paths: e.target.value })}
-                className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
-              />
-            </div>
+            <RepositoryPathsEditor paths={form.paths} onChange={(paths) => setForm({ ...form, paths })} />
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
