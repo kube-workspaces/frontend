@@ -303,7 +303,7 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
               <select
                 value={form.authType}
                 onChange={(e) => setForm({ ...form, authType: e.target.value })}
-                classclassName="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               >
                 <option value="">None</option>
                 <option value="basic">basic</option>
