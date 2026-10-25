@@ -137,6 +137,7 @@ export interface Workspace {
   created_at?: string;
   volume_mounts?: VolumeMount[];
   vm_profile?: string;
+  execution_identity?: "root" | "SYSTEM";
   provisioned?: boolean;
   vm_gpu_profile?: VMGPUProfile;
 }

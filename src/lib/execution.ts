@@ -2,7 +2,7 @@ import type { AuthUser } from "./auth";
 
 // Discovery hint only. The API checks the current account, scope and policy on
 // every start; execution grants never grant namespace membership themselves.
-export function canExecuteWindowsCommand(user: AuthUser | null, namespace: string, name: string, now = Date.now()): boolean {
+export function canExecuteElevatedCommand(user: AuthUser | null, namespace: string, name: string, now = Date.now()): boolean {
   if (!user?.executionCredentialBound || user.mustChangePassword) return false;
   if (user.role === "admin") return true;
   if (user.personalNamespace !== namespace && !user.namespaces?.includes(namespace)) return false;

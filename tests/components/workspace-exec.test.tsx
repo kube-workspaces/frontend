@@ -20,6 +20,26 @@ beforeEach(() => {
 });
 
 describe("workspace Exec", () => {
+  it("uses discovered Linux root identity and sends executable argv without PowerShell", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(result));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={{ ...workspace, name: "linux-vm", vm_profile: undefined, execution_identity: "root" }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    const run = screen.getByRole("button", { name: "Run as root" });
+    await waitFor(() => expect(run).toBeEnabled());
+    expect(screen.getByText(/Linux · root \(elevated\)/)).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "PowerShell command" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Executable")).toHaveValue("/usr/bin/id");
+    fireEvent.change(screen.getByLabelText("Arguments (JSON array)"), { target: { value: '["-u"]' } });
+    fireEvent.click(run);
+    await screen.findByText("héllo ✓");
+    expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ namespace: "demo", workspace_name: "linux-vm", executable: "/usr/bin/id", args: ["-u"], deadline_seconds: 20 });
+  });
+
+  it("does not infer Linux execution support from VM type alone", () => {
+    render(<WorkspaceExec workspace={{ ...workspace, vm_profile: undefined }} />);
+    expect(screen.queryByRole("button", { name: "Exec" })).not.toBeInTheDocument();
+  });
   it("opens a modal, executes once with exact workspace scope, and renders decoded output", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(result));
     vi.stubGlobal("fetch", fetcher);

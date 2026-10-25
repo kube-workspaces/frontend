@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ExecutionStartError, getExecutionStatus, startExecution, type ExecutionCommandResult, type ExecutionStatus, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { canExecuteWindowsCommand, decodeExecutionOutput } from "@/lib/execution";
+import { canExecuteElevatedCommand, decodeExecutionOutput } from "@/lib/execution";
 
 const fieldClass = "mt-1 block w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 p-2 font-mono text-xs disabled:opacity-50";
 
@@ -16,11 +16,12 @@ export default function WorkspaceExec({ workspace }: { workspace: Workspace }) {
     const timer = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(timer);
   }, []);
-  if (loading || !authEnabled || workspace.type !== "vm" || workspace.vm_profile !== "windows11-amd64-v1"
-    || !canExecuteWindowsCommand(user, workspace.namespace, workspace.name, now)) return null;
+  const identity = workspace.execution_identity ?? (workspace.vm_profile === "windows11-amd64-v1" ? "SYSTEM" : undefined);
+  if (loading || !authEnabled || workspace.type !== "vm" || !identity
+    || !canExecuteElevatedCommand(user, workspace.namespace, workspace.name, now)) return null;
   return <>
     <button type="button" onClick={() => setOpen(true)} disabled={workspace.stopped}
-      title="Run a bounded Windows command as SYSTEM"
+      title={`Run a bounded command as ${identity}`}
       className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-purple-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-purple-400 disabled:opacity-50">
       <span aria-hidden="true" className="font-mono">&gt;_</span> Exec
     </button>
@@ -29,14 +30,16 @@ export default function WorkspaceExec({ workspace }: { workspace: Workspace }) {
 }
 
 function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () => void }) {
+  const linux = workspace.execution_identity === "root";
+  const identity = linux ? "root" : "SYSTEM";
   const dialog = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
   const [status, setStatus] = useState<ExecutionStatus | null>(null);
   const [statusError, setStatusError] = useState("");
   const [statusVersion, setStatusVersion] = useState(0);
-  const [mode, setMode] = useState("powershell");
+  const [mode, setMode] = useState(linux ? "executable" : "powershell");
   const [command, setCommand] = useState("whoami");
-  const [executable, setExecutable] = useState("C:\\Windows\\System32\\whoami.exe");
+  const [executable, setExecutable] = useState(linux ? "/usr/bin/id" : "C:\\Windows\\System32\\whoami.exe");
   const [args, setArgs] = useState("[]");
   const [cwd, setCwd] = useState("");
   const [deadline, setDeadline] = useState(20);
@@ -63,7 +66,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
 
   const unavailable = statusError || (!status ? "Checking execution policy and storage…"
     : !status.enabled ? "VM execution is disabled by platform policy."
-    : !status.allow_elevated ? "SYSTEM execution is disabled by platform policy."
+    : !status.allow_elevated ? `${identity} execution is disabled by platform policy.`
     : !status.storage_available ? "Execution recording storage is unavailable."
     : workspace.stopped ? "Start the workspace before running a command." : "");
 
@@ -115,7 +118,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
       <h2 id="exec-title" className="font-semibold">Exec — {workspace.name}</h2>
       <button type="button" onClick={onClose} disabled={pending} className="rounded px-2 py-1 text-xs disabled:opacity-50">Close</button>
     </div>
-    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{workspace.namespace} · Windows · SYSTEM (elevated)</p>
+    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{workspace.namespace} · {linux ? "Linux" : "Windows"} · {identity} (elevated)</p>
     <p className="mt-2 text-xs">Run one command with a maximum 20-second deadline and 16 KiB combined output. This MVP has no interactive input or persistent shell.</p>
     {status && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Recording: {status.durable ? "durable" : "ephemeral — history is lost on API restart"} ({status.storage_mode}). Guest/runner readiness is checked when you run.</p>}
     {unavailable && <p role="status" className="mt-3 text-xs text-amber-700 dark:text-amber-400">{unavailable}</p>}
@@ -123,7 +126,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
     <form onSubmit={run} className="mt-4 space-y-3">
       <fieldset disabled={pending || uncertain} className="space-y-3 disabled:opacity-60">
         <label className="block text-xs">Mode<select className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>
-          <option value="powershell">PowerShell command</option><option value="executable">Executable + arguments</option>
+          {!linux && <option value="powershell">PowerShell command</option>}<option value="executable">Executable + arguments</option>
         </select></label>
         {mode === "powershell" ? <label className="block text-xs">PowerShell command<input required value={command} onChange={(event) => setCommand(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label> : <>
           <label className="block text-xs">Executable<input required maxLength={1024} value={executable} onChange={(event) => setExecutable(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
@@ -135,7 +138,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
         </div>
       </fieldset>
       {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      <button type="submit" disabled={pending || !!unavailable || uncertain} className="rounded bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{pending ? "Running as SYSTEM…" : "Run as SYSTEM"}</button>
+      <button type="submit" disabled={pending || !!unavailable || uncertain} className="rounded bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{pending ? `Running as ${identity}…` : `Run as ${identity}`}</button>
       {pending && <p role="status" className="text-xs">Waiting for the recorded result. Closing the page does not cancel the command.</p>}
     </form>
     {result && <section aria-label="Command result" className="mt-4 space-y-2 border-t border-gray-200 pt-3 text-xs dark:border-gray-700">
