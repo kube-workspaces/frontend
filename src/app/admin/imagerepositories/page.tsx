@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { listImageRepositories, syncImageRepository, deleteImageRepository } from "@/lib/api";
 
@@ -32,28 +32,47 @@ export default function ImageRepositoriesPage() {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = (await listImageRepositories()) as ImageRepository[];
+        if (!cancelled) {
+          setRepos(Array.isArray(data) ? data : []);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load image repositories");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function refresh() {
     try {
       const data = (await listImageRepositories()) as ImageRepository[];
       setRepos(Array.isArray(data) ? data : []);
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load image repositories");
-    } finally {
-      setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  }
 
   async function handleSync(name: string) {
     setSyncing(name);
     try {
       await syncImageRepository(name);
-      await load();
+      await refresh();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to trigger sync");
     } finally {
@@ -65,7 +84,7 @@ export default function ImageRepositoriesPage() {
     if (!confirm(`Delete ImageRepository ${name}?`)) return;
     try {
       await deleteImageRepository(name);
-      await load();
+      await refresh();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to delete image repository");
     }
@@ -170,7 +189,7 @@ export default function ImageRepositoriesPage() {
         </table>
       </div>
 
-      {showAddModal && <AddImageRepositoryModal onClose={() => setShowAddModal(false)} onCreated={load} />}
+      {showAddModal && <AddImageRepositoryModal onClose={() => setShowAddModal(false)} onCreated={refresh} />}
     </div>
   );
 }
@@ -284,7 +303,7 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
               <select
                 value={form.authType}
                 onChange={(e) => setForm({ ...form, authType: e.target.value })}
-                className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                classclassName="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               >
                 <option value="">None</option>
                 <option value="basic">basic</option>

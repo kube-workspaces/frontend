@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getImageRepository, updateImageRepository, deleteImageRepository, syncImageRepository } from "@/lib/api";
 
@@ -45,32 +45,42 @@ export default function ImageRepositoryDetailPage() {
     suspend: false,
   });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = (await getImageRepository(name)) as ImageRepository;
-      setObj(data);
-      const paths = Array.isArray(data.spec?.paths) ? data.spec.paths.join(", ") : data.spec?.paths || "images/";
-      setForm({
-        url: data.spec?.url || "",
-        ref: data.spec?.ref || "main",
-        paths: paths as string,
-        authType: data.spec?.auth?.type || "",
-        secretName: data.spec?.auth?.secretRef?.name || "",
-        syncInterval: data.spec?.syncInterval || "",
-        suspend: !!data.spec?.suspend,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load image repository");
-    } finally {
-      setLoading(false);
-    }
-  }, [name]);
-
   useEffect(() => {
-    if (name) load();
-  }, [name, load]);
+    if (!name) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = (await getImageRepository(name)) as ImageRepository;
+        if (!cancelled) {
+          setObj(data);
+          const paths = Array.isArray(data.spec?.paths) ? data.spec.paths.join(", ") : data.spec?.paths || "images/";
+          setForm({
+            url: data.spec?.url || "",
+            ref: data.spec?.ref || "main",
+            paths: paths as string,
+            authType: data.spec?.auth?.type || "",
+            secretName: data.spec?.auth?.secretRef?.name || "",
+            syncInterval: data.spec?.syncInterval || "",
+            suspend: !!data.spec?.suspend,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load image repository");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -102,7 +112,9 @@ export default function ImageRepositoryDetailPage() {
         delete updated.spec.auth;
       }
       await updateImageRepository(name, updated);
-      await load();
+      // reload
+      const data = (await getImageRepository(name)) as ImageRepository;
+      setObj(data);
       alert("Saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save image repository");
@@ -115,7 +127,8 @@ export default function ImageRepositoryDetailPage() {
     setSyncing(true);
     try {
       await syncImageRepository(name);
-      await load();
+      const data = (await getImageRepository(name)) as ImageRepository;
+      setObj(data);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Failed to trigger sync");
     } finally {
