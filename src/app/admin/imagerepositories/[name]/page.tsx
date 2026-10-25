@@ -1,29 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getImageRepository, updateImageRepository, deleteImageRepository, syncImageRepository } from "@/lib/api";
 
-function get(obj: any, path: string, def: any = "") {
-  try {
-    const parts = path.split(".");
-    let cur = obj;
-    for (const p of parts) {
-      if (cur == null) return def;
-      cur = cur[p];
-    }
-    if (cur == null) return def;
-    return cur;
-  } catch {
-    return def;
-  }
+interface ImageRepository {
+  apiVersion?: string;
+  kind?: string;
+  metadata?: { name: string };
+  spec?: {
+    url?: string;
+    ref?: string;
+    paths?: string[];
+    auth?: { type?: string; secretRef?: { name?: string } };
+    syncInterval?: string;
+    suspend?: boolean;
+  };
+  status?: {
+    lastSyncTime?: string;
+    lastSyncCommit?: string;
+    importedImages?: string[];
+    observedGeneration?: number;
+    conditions?: Array<{ type: string; status: string; reason?: string; message?: string }>;
+  };
 }
 
 export default function ImageRepositoryDetailPage() {
   const params = useParams();
   const router = useRouter();
   const name = params.name as string;
-  const [obj, setObj] = useState<any>(null);
+  const [obj, setObj] = useState<ImageRepository | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -31,7 +37,7 @@ export default function ImageRepositoryDetailPage() {
 
   const [form, setForm] = useState({
     url: "",
-    ref: "",
+    ref: "main",
     paths: "images/",
     authType: "",
     secretName: "",
@@ -39,31 +45,32 @@ export default function ImageRepositoryDetailPage() {
     suspend: false,
   });
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data: any = await getImageRepository(name);
+      const data = (await getImageRepository(name)) as ImageRepository;
       setObj(data);
+      const paths = Array.isArray(data.spec?.paths) ? data.spec.paths.join(", ") : data.spec?.paths || "images/";
       setForm({
-        url: get(data, "spec.url", ""),
-        ref: get(data, "spec.ref", "main"),
-        paths: Array.isArray(get(data, "spec.paths")) ? get(data, "spec.paths").join(", ") : get(data, "spec.paths", "images/"),
-        authType: get(data, "spec.auth.type", ""),
-        secretName: get(data, "spec.auth.secretRef.name", ""),
-        syncInterval: get(data, "spec.syncInterval", "") || "",
-        suspend: !!get(data, "spec.suspend", false),
+        url: data.spec?.url || "",
+        ref: data.spec?.ref || "main",
+        paths: paths as string,
+        authType: data.spec?.auth?.type || "",
+        secretName: data.spec?.auth?.secretRef?.name || "",
+        syncInterval: data.spec?.syncInterval || "",
+        suspend: !!data.spec?.suspend,
       });
-    } catch (e: any) {
-      setError(e?.message || "Failed to load image repository");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load image repository");
     } finally {
       setLoading(false);
     }
-  }
+  }, [name]);
 
   useEffect(() => {
     if (name) load();
-  }, [name]);
+  }, [name, load]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -74,7 +81,7 @@ export default function ImageRepositoryDetailPage() {
         .split(/[\n,]+/)
         .map((p) => p.trim())
         .filter((p) => p.length > 0);
-      const updated: any = JSON.parse(JSON.stringify(obj || {}));
+      const updated: ImageRepository = JSON.parse(JSON.stringify(obj || {}));
       updated.apiVersion = updated.apiVersion || "kubeworkspaces.io/v1alpha1";
       updated.kind = updated.kind || "ImageRepository";
       updated.metadata = updated.metadata || { name };
@@ -97,8 +104,8 @@ export default function ImageRepositoryDetailPage() {
       await updateImageRepository(name, updated);
       await load();
       alert("Saved");
-    } catch (e: any) {
-      setError(e?.message || "Failed to save image repository");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save image repository");
     } finally {
       setSaving(false);
     }
@@ -109,8 +116,8 @@ export default function ImageRepositoryDetailPage() {
     try {
       await syncImageRepository(name);
       await load();
-    } catch (e: any) {
-      alert(e?.message || "Failed to trigger sync");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to trigger sync");
     } finally {
       setSyncing(false);
     }
@@ -121,8 +128,8 @@ export default function ImageRepositoryDetailPage() {
     try {
       await deleteImageRepository(name);
       router.push("/admin/imagerepositories");
-    } catch (e: any) {
-      alert(e?.message || "Failed to delete image repository");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to delete image repository");
     }
   }
 
@@ -134,10 +141,10 @@ export default function ImageRepositoryDetailPage() {
     );
   }
 
-  const imported = Array.isArray(get(obj, "status.importedImages")) ? get(obj, "status.importedImages") : [];
-  const lastSync = get(obj, "status.lastSyncTime", "—");
-  const lastCommit = get(obj, "status.lastSyncCommit", "—");
-  const conditions = Array.isArray(get(obj, "status.conditions")) ? get(obj, "status.conditions") : [];
+  const imported = Array.isArray(obj?.status?.importedImages) ? obj.status.importedImages : [];
+  const lastSync = obj?.status?.lastSyncTime;
+  const lastCommit = obj?.status?.lastSyncCommit || "—";
+  const conditions = Array.isArray(obj?.status?.conditions) ? obj.status.conditions : [];
 
   return (
     <div className="space-y-4">
@@ -271,7 +278,7 @@ export default function ImageRepositoryDetailPage() {
             <div className="p-4 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Last Sync</span>
-                <span className="text-gray-900 dark:text-white">{lastSync === "—" ? "—" : new Date(lastSync).toLocaleString()}</span>
+                <span className="text-gray-900 dark:text-white">{lastSync ? new Date(lastSync).toLocaleString() : "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Last Commit</span>
@@ -279,9 +286,9 @@ export default function ImageRepositoryDetailPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Observed Generation</span>
-                <span className="text-gray-900 dark:text-white">{get(obj, "status.observedGeneration", "—")}</span>
+                <span className="text-gray-900 dark:text-white">{obj?.status?.observedGeneration ?? "—"}</span>
               </div>
-              {conditions.map((c: any, idx: number) => (
+              {conditions.map((c, idx) => (
                 <div key={idx} className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">{c.type}</span>
                   <span className={c.status === "True" ? "text-green-600 dark:text-green-400" : "text-gray-900 dark:text-white"}>
@@ -309,7 +316,7 @@ export default function ImageRepositoryDetailPage() {
                       <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">None</td>
                     </tr>
                   ) : (
-                    imported.map((img: string) => (
+                    imported.map((img) => (
                       <tr key={img} className="hover:bg-gray-50 dark:hover:bg-white/5">
                         <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{img}</td>
                       </tr>
