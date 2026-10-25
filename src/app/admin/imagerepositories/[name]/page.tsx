@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { getImageRepository, updateImageRepository, deleteImageRepository, syncImageRepository } from "@/lib/api";
 
 function get(obj: any, path: string, def: any = "") {
@@ -48,7 +47,7 @@ export default function ImageRepositoryDetailPage() {
       setObj(data);
       setForm({
         url: get(data, "spec.url", ""),
-        ref: get(data, "spec.ref", ""),
+        ref: get(data, "spec.ref", "main"),
         paths: Array.isArray(get(data, "spec.paths")) ? get(data, "spec.paths").join(", ") : get(data, "spec.paths", "images/"),
         authType: get(data, "spec.auth.type", ""),
         secretName: get(data, "spec.auth.secretRef.name", ""),
@@ -82,7 +81,7 @@ export default function ImageRepositoryDetailPage() {
       updated.metadata.name = name;
       updated.spec = updated.spec || {};
       updated.spec.url = form.url;
-      updated.spec.ref = form.ref || undefined;
+      updated.spec.ref = form.ref || "main";
       updated.spec.paths = pathsArr.length > 0 ? pathsArr : ["images/"];
       updated.spec.suspend = form.suspend;
       if (form.syncInterval) {
@@ -128,32 +127,39 @@ export default function ImageRepositoryDetailPage() {
   }
 
   if (loading) {
-    return <div className="text-sm text-[var(--text-secondary)]">Loading...</div>;
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-sm text-gray-500 dark:text-gray-400">Loading...</div>
+      </div>
+    );
   }
 
   const imported = Array.isArray(get(obj, "status.importedImages")) ? get(obj, "status.importedImages") : [];
+  const lastSync = get(obj, "status.lastSyncTime", "—");
+  const lastCommit = get(obj, "status.lastSyncCommit", "—");
+  const conditions = Array.isArray(get(obj, "status.conditions")) ? get(obj, "status.conditions") : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">ImageRepository: {name}</h1>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">Manage and sync this repository</p>
-        </div>
-        <div className="flex gap-2">
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">ImageRepository: {name}</h1>
+        <div className="flex items-center gap-1">
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="px-4 py-2 text-sm font-medium rounded-md bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 disabled:opacity-50 transition-colors"
           >
             {syncing ? "Syncing..." : "Sync now"}
           </button>
-          <Link href="/admin/imagerepositories" className="px-4 py-2 text-sm font-medium rounded-md border border-[var(--border-color)] hover:bg-[var(--bg-secondary)]">
+          <button
+            onClick={() => router.push("/admin/imagerepositories")}
+            className="px-2 py-1 text-[10px] font-medium rounded text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
             Back
-          </Link>
+          </button>
           <button
             onClick={handleDelete}
-            className="px-4 py-2 text-sm font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+            className="px-2 py-1 text-[10px] font-medium rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
           >
             Delete
           </button>
@@ -161,118 +167,157 @@ export default function ImageRepositoryDetailPage() {
       </div>
 
       {error && (
-        <div className="p-4 rounded-md bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400">
-          {error}
+        <div className="border border-red-200 dark:border-red-800 rounded-md bg-red-50 dark:bg-red-900/20 p-3">
+          <p className="text-xs text-red-700 dark:text-red-400">{error}</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <form onSubmit={handleSave} className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-6 space-y-4">
-          <h2 className="text-lg font-medium text-[var(--text-primary)]">Spec</h2>
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Repository URL</label>
-            <input
-              type="text"
-              required
-              value={form.url}
-              onChange={(e) => setForm({ ...form, url: e.target.value })}
-              className="w-full px-3 py-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
-            />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <form onSubmit={handleSave} className="border border-gray-200 dark:border-gray-800 rounded-md overflow-hidden">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2.5 border-b border-gray-200 dark:border-gray-800">
+            <h2 className="text-sm font-medium text-gray-900 dark:text-white">Spec</h2>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="p-4 space-y-3">
             <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Ref</label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Repository URL</label>
               <input
                 type="text"
-                value={form.ref}
-                onChange={(e) => setForm({ ...form, ref: e.target.value })}
-                className="w-full px-3 py-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
+                required
+                value={form.url}
+                onChange={(e) => setForm({ ...form, url: e.target.value })}
+                className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Ref</label>
+                <input
+                  type="text"
+                  value={form.ref}
+                  onChange={(e) => setForm({ ...form, ref: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sync Interval</label>
+                <input
+                  type="text"
+                  value={form.syncInterval}
+                  onChange={(e) => setForm({ ...form, syncInterval: e.target.value })}
+                  placeholder="10m"
+                  className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
             <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Sync Interval</label>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Paths (comma separated)</label>
               <input
                 type="text"
-                value={form.syncInterval}
-                onChange={(e) => setForm({ ...form, syncInterval: e.target.value })}
-                className="w-full px-3 py-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
-                placeholder="10m"
+                value={form.paths}
+                onChange={(e) => setForm({ ...form, paths: e.target.value })}
+                className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               />
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Paths</label>
-            <textarea
-              value={form.paths}
-              onChange={(e) => setForm({ ...form, paths: e.target.value })}
-              className="w-full px-3 py-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
-              rows={3}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Auth Type</label>
-              <select
-                value={form.authType}
-                onChange={(e) => setForm({ ...form, authType: e.target.value })}
-                className="w-full px-3 py-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
+                <select
+                  value={form.authType}
+                  onChange={(e) => setForm({ ...form, authType: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
+                >
+                  <option value="">None</option>
+                  <option value="basic">basic</option>
+                  <option value="ssh">ssh</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Name</label>
+                <input
+                  type="text"
+                  value={form.secretName}
+                  onChange={(e) => setForm({ ...form, secretName: e.target.value })}
+                  disabled={!form.authType}
+                  className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white disabled:opacity-50"
+                />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={form.suspend}
+                onChange={(e) => setForm({ ...form, suspend: e.target.checked })}
+                className="rounded border-gray-300 dark:border-gray-700"
+              />
+              Suspend
+            </label>
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 disabled:opacity-50 transition-colors"
               >
-                <option value="">None</option>
-                <option value="https-basic">HTTPS Basic</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Secret Name</label>
-              <input
-                type="text"
-                value={form.secretName}
-                onChange={(e) => setForm({ ...form, secretName: e.target.value })}
-                disabled={!form.authType}
-                className="w-full px-3 py-2 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)] disabled:opacity-50"
-              />
+                {saving ? "Saving..." : "Save"}
+              </button>
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
-            <input
-              type="checkbox"
-              checked={form.suspend}
-              onChange={(e) => setForm({ ...form, suspend: e.target.checked })}
-            />
-            Suspend syncing
-          </label>
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 text-sm font-medium rounded-md bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save"}
-          </button>
         </form>
 
-        <div className="space-y-6">
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-6 space-y-3">
-            <h2 className="text-lg font-medium text-[var(--text-primary)]">Status</h2>
-            <div className="text-sm text-[var(--text-secondary)] space-y-1">
-              <div><span className="text-[var(--text-primary)]">Last Sync:</span> {get(obj, "status.lastSyncTime") ? new Date(get(obj, "status.lastSyncTime")).toLocaleString() : "—"}</div>
-              <div><span className="text-[var(--text-primary)]">Last Commit:</span> <span className="font-mono">{get(obj, "status.lastSyncCommit", "—")}</span></div>
-              <div><span className="text-[var(--text-primary)]">Observed Generation:</span> {get(obj, "status.observedGeneration", "—")}</div>
+        <div className="space-y-4">
+          <div className="border border-gray-200 dark:border-gray-800 rounded-md overflow-hidden">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2.5 border-b border-gray-200 dark:border-gray-800">
+              <h2 className="text-sm font-medium text-gray-900 dark:text-white">Status</h2>
+            </div>
+            <div className="p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Last Sync</span>
+                <span className="text-gray-900 dark:text-white">{lastSync === "—" ? "—" : new Date(lastSync).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Last Commit</span>
+                <span className="font-mono text-xs text-gray-900 dark:text-white truncate max-w-[200px]">{lastCommit}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Observed Generation</span>
+                <span className="text-gray-900 dark:text-white">{get(obj, "status.observedGeneration", "—")}</span>
+              </div>
+              {conditions.map((c: any, idx: number) => (
+                <div key={idx} className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">{c.type}</span>
+                  <span className={c.status === "True" ? "text-green-600 dark:text-green-400" : "text-gray-900 dark:text-white"}>
+                    {c.status} {c.reason ? `(${c.reason})` : ""}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-6 space-y-3">
-            <h2 className="text-lg font-medium text-[var(--text-primary)]">Imported Images</h2>
-            {imported.length === 0 ? (
-              <div className="text-sm text-[var(--text-secondary)]">None</div>
-            ) : (
-              <ul className="space-y-1">
-                {imported.map((img: string) => (
-                  <li key={img}>
-                    <Link href={`/admin/images?name=${encodeURIComponent(img)}`} className="text-sm text-[var(--accent-primary)] hover:underline">
-                      {img}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
+
+          <div className="border border-gray-200 dark:border-gray-800 rounded-md overflow-hidden">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2.5 border-b border-gray-200 dark:border-gray-800">
+              <h2 className="text-sm font-medium text-gray-900 dark:text-white">Imported Images ({imported.length})</h2>
+            </div>
+            <div className="max-h-80 overflow-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Name</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800/50">
+                  {imported.length === 0 ? (
+                    <tr>
+                      <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">None</td>
+                    </tr>
+                  ) : (
+                    imported.map((img: string) => (
+                      <tr key={img} className="hover:bg-gray-50 dark:hover:bg-white/5">
+                        <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{img}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
