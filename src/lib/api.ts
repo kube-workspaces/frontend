@@ -1361,7 +1361,8 @@ export async function listImageRepositories(): Promise<unknown[]> {
   if (!res.ok) throw await apiError(res, "Failed to list image repositories");
   const data = await res.json();
   if (Array.isArray(data)) return data;
-  if (data && Array.isArray((data as any).items)) return (data as any).items;
+  const items = (data as Record<string, unknown>)?.items;
+  if (Array.isArray(items)) return items as unknown[];
   return [];
 }
 
