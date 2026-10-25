@@ -378,6 +378,11 @@ export interface ImageProxyConfig {
 
 export interface WorkspaceImage {
   cr_name: string;
+  source_repository?: string;
+  source_repository_url?: string;
+  source_repository_ref?: string;
+  source_repository_commit?: string;
+  source_repository_path?: string;
   name: string;
   image: string;
   description?: string;

@@ -4,16 +4,19 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ImageIcon from "@/components/image-icon";
+import ImageCatalog from "@/components/image-catalog";
 import { listImages, createImage, getImageCR, listWorkspaces, WorkspaceImage, CreateImagePayload, Workspace } from "@/lib/api";
 import yaml from "yaml";
 
 type ViewMode = "tiles" | "list" | "compact";
 
-const viewIcons: Record<ViewMode, string> = {
-  tiles: "\u25A6",
-  list: "\u2261",
-  compact: "\u2B1F",
-};
+function ViewIcon({ mode }: { mode: ViewMode }) {
+  return <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+    {mode === "tiles" ? <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
+      : mode === "list" ? <path d="M3 5h2m4 0h12M3 12h2m4 0h12M3 19h2m4 0h12" />
+        : <path d="M3 3h4v4H3zM10 3h4v4h-4zM17 3h4v4h-4zM3 10h4v4H3zM10 10h4v4h-4zM17 10h4v4h-4zM3 17h4v4H3zM10 17h4v4h-4zM17 17h4v4h-4z" />}
+  </svg>;
+}
 
 export default function ImagesPage() {
   const [images, setImages] = useState<WorkspaceImage[]>([]);
@@ -27,32 +30,7 @@ export default function ImagesPage() {
   const [modalCRError, setModalCRError] = useState<string | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [search, setSearch] = useState("");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("images-category-filter") || "";
-    }
-    return "";
-  });
-  const [selectedTags, setSelectedTags] = useState<string[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("images-tags-filter");
-      if (stored) {
-        try { return JSON.parse(stored); } catch { return []; }
-      }
-    }
-    return [];
-  });
-
-  const updateCategory = (cat: string) => {
-    setSelectedCategory(cat);
-    localStorage.setItem("images-category-filter", cat);
-  };
-  const updateTags = (tags: string[]) => {
-    setSelectedTags(tags);
-    localStorage.setItem("images-tags-filter", JSON.stringify(tags));
-  };
 
   const fetchImages = useCallback(async () => {
     try {
@@ -95,32 +73,6 @@ export default function ImagesPage() {
     fetchImages();
   };
 
-  // Compute available categories and tags from loaded images
-  const categories = Array.from(new Set(images.map(img => img.category || "Other").filter(Boolean))).sort();
-  const allTags = Array.from(new Set(images.flatMap(img => img.tags || []))).sort();
-
-  const filteredImages = images.filter((img) => {
-    // Category filter
-    if (selectedCategory && (img.category || "Other") !== selectedCategory) return false;
-    // Tag filter (all selected tags must be present)
-    if (selectedTags.length > 0) {
-      const imgTags = img.tags || [];
-      if (!selectedTags.every(t => imgTags.includes(t))) return false;
-    }
-    // Text search
-    if (search) {
-      const q = search.toLowerCase();
-      return (
-        img.name.toLowerCase().includes(q) ||
-        img.image.toLowerCase().includes(q) ||
-        (img.description && img.description.toLowerCase().includes(q)) ||
-        (img.category && img.category.toLowerCase().includes(q)) ||
-        (img.tags && img.tags.some(t => t.toLowerCase().includes(q)))
-      );
-    }
-    return true;
-  });
-
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -131,28 +83,37 @@ export default function ImagesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Available Images
-        </h1>
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search images..."
-            className="px-2.5 py-1.5 text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500 w-48"
-          />
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 transition-colors"
-          >
-            + Add Image
-          </button>
-          <div className="flex items-center gap-0.5 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+            Available Images
+          </h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Find the right image for your next workspace.</p>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="shrink-0 px-3 py-2 text-xs font-medium rounded-md bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 transition-colors"
+        >
+          + Add Image
+        </button>
+      </div>
+
+      {error && (
+        <div role="alert" className="border border-red-200 dark:border-red-800 rounded-md bg-red-50 dark:bg-red-900/20 p-3">
+          <p className="text-xs text-red-700 dark:text-red-400">{error}</p>
+        </div>
+      )}
+
+      <ImageCatalog
+        images={images}
+        onAdd={() => setShowAddModal(true)}
+        controls={
+          <div role="group" aria-label="Image view" className="flex items-center gap-0.5 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
             {(["tiles", "list", "compact"] as ViewMode[]).map((mode) => (
               <button
                 key={mode}
+                aria-label={`${mode.charAt(0).toUpperCase() + mode.slice(1)} view`}
+                aria-pressed={viewMode === mode}
                 onClick={() => setViewMode(mode)}
                 className={`px-2 py-1 text-xs rounded ${
                   viewMode === mode
@@ -161,116 +122,32 @@ export default function ImagesPage() {
                 }`}
                 title={`${mode.charAt(0).toUpperCase() + mode.slice(1)} view`}
               >
-                {viewIcons[mode]}
+                <ViewIcon mode={mode} />
               </button>
             ))}
           </div>
-        </div>
-      </div>
-
-      {error && (
-        <div className="border border-red-200 dark:border-red-800 rounded-md bg-red-50 dark:bg-red-900/20 p-3">
-          <p className="text-xs text-red-700 dark:text-red-400">{error}</p>
-        </div>
-      )}
-
-      {/* Category and tag filters */}
-      {(categories.length > 1 || allTags.length > 0) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {categories.length > 1 && (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-500 dark:text-gray-400">Category:</span>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  onClick={() => updateCategory("")}
-                  className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
-                    selectedCategory === ""
-                      ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900"
-                      : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-                  }`}
-                >
-                  All
-                </button>
-                {categories.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => updateCategory(selectedCategory === cat ? "" : cat)}
-                    className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
-                      selectedCategory === cat
-                        ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900"
-                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {allTags.length > 0 && (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-500 dark:text-gray-400">Tags:</span>
-              <div className="flex flex-wrap gap-1">
-                {allTags.map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => updateTags(
-                      selectedTags.includes(tag) ? selectedTags.filter(t => t !== tag) : [...selectedTags, tag]
-                    )}
-                    className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
-                      selectedTags.includes(tag)
-                        ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {(selectedCategory || selectedTags.length > 0) && (
-            <button
-              onClick={() => { updateCategory(""); updateTags([]); }}
-              className="px-2 py-0.5 text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      )}
-
-      {filteredImages.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-sm text-gray-500 dark:text-gray-400">{search || selectedCategory || selectedTags.length > 0 ? "No images match your filters." : "No images available."}</p>
-          {!search && !selectedCategory && selectedTags.length === 0 && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="mt-3 px-3 py-1.5 text-xs font-medium rounded-md bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-200 transition-colors"
-            >
-              + Add Image
-            </button>
-          )}
-        </div>
-      ) : viewMode === "list" ? (
-        <div className="space-y-2">
-          {filteredImages.map((img) => (
-            <ImageListRow key={img.image} img={img} onShowJson={handleShowJson} />
-          ))}
-        </div>
-      ) : viewMode === "compact" ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-          {filteredImages.map((img) => (
-            <ImageCompactCard key={img.image} img={img} onShowJson={handleShowJson} />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredImages.map((img) => (
-            <ImageTileCard key={img.image} img={img} workspaces={workspaces} onShowJson={handleShowJson} />
-          ))}
-        </div>
-      )}
+        }
+      >
+        {(filteredImages) => viewMode === "list" ? (
+          <div className="space-y-2">
+            {filteredImages.map((img) => (
+              <ImageListRow key={img.cr_name} img={img} onShowJson={handleShowJson} />
+            ))}
+          </div>
+        ) : viewMode === "compact" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+            {filteredImages.map((img) => (
+              <ImageCompactCard key={img.cr_name} img={img} onShowJson={handleShowJson} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {filteredImages.map((img) => (
+              <ImageTileCard key={img.cr_name} img={img} workspaces={workspaces} onShowJson={handleShowJson} />
+            ))}
+          </div>
+        )}
+      </ImageCatalog>
 
       {modalImage && (
         <JsonModal
@@ -777,6 +654,18 @@ function SourceIcon({ url }: { url: string }) {
   return GENERIC_SOURCE_ICON;
 }
 
+function ImageClassification({ img }: { img: WorkspaceImage }) {
+  const tags = img.tags || [];
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+      <span className="rounded bg-[var(--color-primary-subtle)] px-1.5 py-0.5 font-medium text-[var(--color-primary)]">{img.category?.trim() || "Other"}</span>
+      {tags.slice(0, 3).map(tag => <span key={tag} className="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">{tag}</span>)}
+      {tags.length > 3 && <span title={tags.slice(3).join(", ")}>+{tags.length - 3} tags</span>}
+      <span className="max-w-full truncate" title={img.source_repository_url || "No repository origin is recorded for this image"}>Repository: {img.source_repository || "Not recorded"}</span>
+    </div>
+  );
+}
+
 function ImageTileCard({
   img,
   workspaces,
@@ -806,6 +695,7 @@ function ImageTileCard({
         </div>
         {img.icon && <ImageIcon icon={img.icon} size={48} />}
       </div>
+      <ImageClassification img={img} />
       <dl className="mt-3 space-y-1.5 text-xs flex-1">
         <div>
           <dt className="font-medium text-gray-500 dark:text-gray-400 uppercase text-[10px] tracking-wide">Image</dt>
@@ -970,9 +860,10 @@ function ImageListRow({
               {img.description}
             </p>
           )}
+          <ImageClassification img={img} />
         </div>
-        <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 shrink-0">
-          <span className="font-mono">{img.image}</span>
+        <div className="hidden 2xl:flex max-w-[40%] items-center gap-3 text-xs text-gray-500 dark:text-gray-400 min-w-0">
+          <span className="font-mono truncate" title={img.image}>{img.image}</span>
           <span>:{img.default_port}</span>
           {img.default_path && <span className="font-mono">{img.default_path}</span>}
         </div>
@@ -1008,6 +899,7 @@ function ImageCompactCard({
       <p className="mt-1 text-[10px] font-mono text-gray-500 dark:text-gray-400 truncate">
         {img.image}
       </p>
+      <ImageClassification img={img} />
       <div className="mt-1.5 flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
         <span>:{img.default_port}</span>
         {img.default_path && <span className="font-mono truncate">{img.default_path}</span>}
