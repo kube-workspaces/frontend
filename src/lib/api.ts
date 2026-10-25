@@ -16,10 +16,15 @@ export interface ExecutionStatus {
 export interface ExecutionCommand {
   namespace: string;
   workspace_name: string;
-  executable: string;
-  args: string[];
+  executable?: string;
+  args?: string[];
   cwd?: string;
   deadline_seconds: number;
+  script?: {
+    body: string;
+    name?: string;
+    cwd?: string;
+  };
 }
 
 export interface ExecutionCommandResult {

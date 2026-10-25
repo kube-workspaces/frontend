@@ -47,6 +47,9 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
   const [error, setError] = useState("");
   const [result, setResult] = useState<ExecutionCommandResult | null>(null);
   const [uncertain, setUncertain] = useState(false);
+  const [scriptBody, setScriptBody] = useState(linux ? "#!/usr/bin/env bash\necho hello\n" : "# PowerShell\nWrite-Output hello\n");
+  const [scriptName, setScriptName] = useState(linux ? "run.sh" : "script.ps1");
+  const [scriptCwd, setScriptCwd] = useState("");
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -74,21 +77,54 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
     event.preventDefault();
     if (submitting.current || unavailable || uncertain) return;
     setError("");
-    let argv: string[];
-    try {
-      const parsed: unknown = mode === "powershell" ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command] : JSON.parse(args);
-      if (!Array.isArray(parsed) || !parsed.every((arg) => typeof arg === "string")) throw new Error("Arguments must be a JSON array of strings.");
-      argv = parsed;
-      if (argv.length > 64 || argv.some((arg) => new TextEncoder().encode(arg).length > 8192 || /\p{Cc}/u.test(arg))) {
-        throw new Error("Use at most 64 arguments, each at most 8192 bytes and without control characters. PowerShell commands must be a single line.");
-      }
-    } catch (err) {
-      setError(err instanceof SyntaxError ? "Arguments must be a JSON array of strings." : (err as Error).message);
-      return;
-    }
     submitting.current = true;
     setPending(true); setResult(null);
     try {
+      if (mode === "script") {
+        const body = scriptBody;
+        if (body.length === 0) {
+          throw new Error("Script body is required.");
+        }
+        if (new TextEncoder().encode(body).length > 65536) {
+          throw new Error("Script body must be at most 65536 bytes.");
+        }
+        if (body.includes("\u0000")) {
+          throw new Error("Script body contains null bytes.");
+        }
+        const name = scriptName.trim();
+        if (name && (name.includes("/") || name.includes("\\") || name.length > 128)) {
+          throw new Error("Script filename hint is out of bounds.");
+        }
+        const next = await startExecution({
+          namespace: workspace.namespace,
+          workspace_name: workspace.name,
+          deadline_seconds: deadline,
+          script: {
+            body,
+            ...(name ? { name } : {}),
+            ...(scriptCwd ? { cwd: scriptCwd } : {}),
+          },
+        });
+        setResult(next);
+        if (next.outcome === "unknown" || next.state === "recording_lost") setUncertain(true);
+        submitting.current = false;
+        setPending(false);
+        return;
+      }
+      let argv: string[];
+      try {
+        const parsed: unknown = mode === "powershell" ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command] : JSON.parse(args);
+        if (!Array.isArray(parsed) || !parsed.every((arg) => typeof arg === "string")) throw new Error("Arguments must be a JSON array of strings.");
+        argv = parsed;
+        if (argv.length > 64 || argv.some((arg) => new TextEncoder().encode(arg).length > 8192 || /\p{Cc}/u.test(arg))) {
+          throw new Error("Use at most 64 arguments, each at most 8192 bytes and without control characters. PowerShell commands must be a single line.");
+        }
+      } catch (err) {
+        setError(err instanceof SyntaxError ? "Arguments must be a JSON array of strings." : (err as Error).message);
+        submitting.current = false;
+        setPending(false);
+        return;
+      }
       const next = await startExecution({
         namespace: workspace.namespace, workspace_name: workspace.name,
         executable: mode === "powershell" ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" : executable,
@@ -126,14 +162,24 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
     <form onSubmit={run} className="mt-4 space-y-3">
       <fieldset disabled={pending || uncertain} className="space-y-3 disabled:opacity-60">
         <label className="block text-xs">Mode<select className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>
-          {!linux && <option value="powershell">PowerShell command</option>}<option value="executable">Executable + arguments</option>
+          {!linux && <option value="powershell">PowerShell command</option>}
+          <option value="executable">Executable + arguments</option>
+          <option value="script">Script</option>
         </select></label>
-        {mode === "powershell" ? <label className="block text-xs">PowerShell command<input required value={command} onChange={(event) => setCommand(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label> : <>
+        {mode === "powershell" ? <label className="block text-xs">PowerShell command<input required value={command} onChange={(event) => setCommand(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label> : mode === "script" ? <>
+          <label className="block text-xs">Script body<textarea required value={scriptBody} onChange={(event) => setScriptBody(event.target.value)} className={fieldClass} rows={8} spellCheck={false} /></label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block text-xs">Filename hint (optional)<input maxLength={128} value={scriptName} onChange={(event) => setScriptName(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
+            <label className="block text-xs">Working directory (optional)<input maxLength={1024} value={scriptCwd} onChange={(event) => setScriptCwd(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Executed via shebang (e.g. #!/usr/bin/env bash, #!/usr/bin/env pwsh). Max 64 KiB.</p>
+        </> : <>
           <label className="block text-xs">Executable<input required maxLength={1024} value={executable} onChange={(event) => setExecutable(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
           <label className="block text-xs">Arguments (JSON array)<textarea required value={args} onChange={(event) => setArgs(event.target.value)} className={fieldClass} rows={3} spellCheck={false} /></label>
+          <label className="block text-xs">Working directory (optional)<input maxLength={1024} value={cwd} onChange={(event) => setCwd(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
         </>}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="block text-xs">Working directory (optional)<input maxLength={1024} value={cwd} onChange={(event) => setCwd(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
+          {mode !== "script" && mode !== "powershell" ? null : mode === "script" ? <div /> : <div />}
           <label className="block text-xs">Deadline (seconds)<input type="number" required min={1} max={20} value={deadline} onChange={(event) => setDeadline(Number(event.target.value))} className={fieldClass} /></label>
         </div>
       </fieldset>
