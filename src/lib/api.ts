@@ -1351,3 +1351,72 @@ export async function getPlatformVersion(): Promise<PlatformVersion | null> {
   if (!res.ok) return null;
   return res.json();
 }
+
+// Image Repositories (CRD admin API)
+export async function listImageRepositories(): Promise<unknown[]> {
+  const res = await fetch(`${API_BASE}/admin/crds/imagerepositories`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!res.ok) throw await apiError(res, "Failed to list image repositories");
+  const data = await res.json();
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray((data as any).items)) return (data as any).items;
+  return [];
+}
+
+export async function getImageRepository(name: string): Promise<unknown> {
+  const res = await fetch(
+    `${API_BASE}/admin/crds/imagerepositories/${encodeURIComponent(name)}`,
+    { cache: "no-store", credentials: "include" }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to get image repository");
+  return res.json();
+}
+
+export async function createImageRepository(obj: unknown): Promise<unknown> {
+  const res = await fetch(`${API_BASE}/admin/crds/imagerepositories`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(obj),
+  });
+  if (!res.ok) throw await apiError(res, "Failed to create image repository");
+  return res.json();
+}
+
+export async function updateImageRepository(
+  name: string,
+  obj: unknown
+): Promise<unknown> {
+  const res = await fetch(
+    `${API_BASE}/admin/crds/imagerepositories/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(obj),
+    }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to update image repository");
+  return res.json();
+}
+
+export async function deleteImageRepository(name: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/admin/crds/imagerepositories/${encodeURIComponent(name)}`,
+    { method: "DELETE", credentials: "include" }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to delete image repository");
+}
+
+export async function syncImageRepository(name: string): Promise<unknown> {
+  const res = await fetch(
+    `${API_BASE}/admin/crds/imagerepositories/${encodeURIComponent(
+      name
+    )}/sync`,
+    { method: "POST", credentials: "include" }
+  );
+  if (!res.ok) throw await apiError(res, "Failed to sync image repository");
+  return res.json();
+}
