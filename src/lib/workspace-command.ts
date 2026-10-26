@@ -14,3 +14,13 @@ export function parseWorkspaceCommand(value: string): string[] | undefined {
   }
   return parsed as string[];
 }
+
+export function parseWorkspaceArgs(value: string): string[] | undefined {
+  if (!value.trim()) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { throw new Error("Arguments override must be a JSON array of strings."); }
+  if (!Array.isArray(parsed) || parsed.some((arg) => typeof arg !== "string" || arg.includes("\0"))) {
+    throw new Error("Arguments override must be a JSON array of strings.");
+  }
+  return parsed as string[];
+}

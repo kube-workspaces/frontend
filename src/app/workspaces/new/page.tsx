@@ -19,7 +19,9 @@ import {
 } from "@/lib/api";
 import { useNamespace } from "@/lib/namespace";
 import VMGPUProfileSelect from "@/components/vm-gpu-profile-select";
-import { parseWorkspaceCommand } from "@/lib/workspace-command";
+import { parseWorkspaceCommand, parseWorkspaceArgs } from "@/lib/workspace-command";
+import { initialContainerInitForm, containerInitOverride } from "@/lib/container-init-form";
+import ContainerInitFields from "@/components/container-init-fields";
 
 // Scheduling presets define common node affinity/toleration configurations
 interface SchedulingPreset {
@@ -99,6 +101,8 @@ function NewWorkspaceForm() {
   const [scratchImage, setScratchImage] = useState("alpine");
   const [scratchImageMode, setScratchImageMode] = useState<"catalog" | "custom">("catalog");
   const [command, setCommand] = useState("");
+  const [args, setArgs] = useState("");
+  const [initialization, setInitialization] = useState(initialContainerInitForm);
   const scratchImages = filterImagesByType(images, "scratch");
 
   // Form field locks (admin-controlled)
@@ -126,6 +130,8 @@ function NewWorkspaceForm() {
 
   const chooseImage = (image: WorkspaceImage | null) => {
     setSelectedImage(image);
+    setInitialization(initialContainerInitForm(image));
+    setArgs("");
     if (image?.vm_profile === "windows11-amd64-v1") {
       setWorkspaceType("vm"); setSelectedVolumes([]); setEnvVars([]); setGpuEnabled(false); setShmEnabled(false);
       setCpuLimit(getFieldLock("cpu_limit")?.value || "4");
@@ -147,6 +153,8 @@ function NewWorkspaceForm() {
         chooseImage(sImages[0]);
       } else {
         setCommand('["sleep","infinity"]');
+        setArgs("");
+        setInitialization(initialContainerInitForm());
         setSelectedImage({
           cr_name: "scratch",
           name: "Scratch",
@@ -162,6 +170,7 @@ function NewWorkspaceForm() {
 
   const handleScratchImageChange = (val: string) => {
     setScratchImage(val);
+    setInitialization(initialContainerInitForm());
     setSelectedImage({
       cr_name: "scratch",
       name: "Scratch",
@@ -177,6 +186,8 @@ function NewWorkspaceForm() {
       chooseImage(sImages[0]);
     } else {
       setCommand('["sleep","infinity"]');
+      setArgs("");
+      setInitialization(initialContainerInitForm());
       setSelectedImage({
         cr_name: "scratch",
         name: "Scratch",
@@ -291,7 +302,9 @@ function NewWorkspaceForm() {
     setError(null);
 
     try {
-      const commandOverride = workspaceType === "scratch" ? parseWorkspaceCommand(command) : undefined;
+      const commandOverride = workspaceType !== "vm" ? parseWorkspaceCommand(command) : undefined;
+      const argsOverride = workspaceType !== "vm" ? parseWorkspaceArgs(args) : undefined;
+      const initOverride = workspaceType !== "vm" ? containerInitOverride(initialization, selectedImage, commandOverride) : undefined;
       const volumeMounts = await Promise.all(
         selectedVolumes.map(async (v) => {
           if (v.isNew && v.name) {
@@ -346,8 +359,10 @@ function NewWorkspaceForm() {
           memory_limit: memoryLimit,
           ...(!isWindows && gpuEnabled && gpuCount ? { gpu_request: gpuCount, gpu_vendor: gpuVendor } : {}),
           ...(commandOverride ? { command: commandOverride } : {}),
+          ...(argsOverride !== undefined ? { args: argsOverride } : {}),
         },
         volume_mounts: volumeMounts,
+        ...(initOverride ? { container_init: initOverride } : {}),
         ...(filteredEnv.length > 0 ? { env: filteredEnv } : {}),
         ...(allTolerations.length > 0 ? { tolerations: allTolerations } : {}),
         ...(Object.keys(allNodeSelector).length > 0 ? { node_selector: allNodeSelector } : {}),
@@ -590,7 +605,7 @@ function NewWorkspaceForm() {
           )}
         </div>
 
-        {workspaceType === "scratch" && (
+        {workspaceType !== "vm" && (
           <div>
             <label htmlFor="scratchCommand" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Command override (JSON argv)</label>
             <input
@@ -602,8 +617,13 @@ function NewWorkspaceForm() {
               className={inputClass}
             />
             <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">Leave empty to preserve image startup and catalog arguments. Override with a JSON array, e.g. {`["sleep","infinity"]`}. Shell scripts must be one argument after {`["/bin/sh","-c", ...]`}.</p>
+            <label htmlFor="containerArgs" className="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Arguments override (JSON array)</label>
+            <input id="containerArgs" value={args} onChange={(e) => setArgs(e.target.value)} placeholder='Leave empty to use defaults; [] clears arguments' className={inputClass} />
+            <p className="mt-1 text-[10px] text-gray-400">An explicit command replaces catalog arguments unless you also supply arguments here.</p>
           </div>
         )}
+
+        {workspaceType !== "vm" && <ContainerInitFields value={initialization} onChange={setInitialization} image={selectedImage} inputClass={inputClass} />}
 
         <div>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Resources</label>

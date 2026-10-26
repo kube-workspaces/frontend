@@ -184,6 +184,38 @@ describe("workspace detail", () => {
 });
 
 describe("workspace volume creation", () => {
+  it("submits container Secret initialization and structured application overrides", async () => {
+    vi.mocked(api.listImages).mockResolvedValue([{ ...images[0], default_command: ["sleep"], default_user_data: "#cloud-config\nruncmd: []\n" }]);
+    render(<NewWorkspacePage />);
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "init" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Initialization mode" }), { target: { value: "injected" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "User-data source" }), { target: { value: "secret" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /User-data Secret name/ }), { target: { value: "private-init" } });
+    // Use a valid JSON argv whose final empty argument must survive serialization.
+    fireEvent.change(screen.getByRole("textbox", { name: /Command override/ }), { target: { value: JSON.stringify(["app", "a b", ""]) } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Arguments override/ }), { target: { value: "[]" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Application run-as account/ }), { target: { value: "nobody" } });
+    fireEvent.submit(name.closest("form")!);
+    await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      type: "container", container_init: { mode: "injected", user_data_secret: "private-init", default_user: "", run_as_user: "nobody" },
+      container: expect.objectContaining({ command: ["app", "a b", ""], args: [] }),
+    })));
+  });
+
+  it("rejects invalid initialization before creating a home volume", async () => {
+    vi.mocked(api.listImages).mockResolvedValue([{ ...images[0], default_homedir: "/home/coder", default_command: ["sleep"] }]);
+    render(<NewWorkspacePage />);
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "invalid-init" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Initialization mode" }), { target: { value: "injected" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Cloud-config/ }), { target: { value: "not cloud-config" } });
+    fireEvent.submit(name.closest("form")!);
+    expect(await screen.findByText(/Inline user-data must begin/)).toBeInTheDocument();
+    expect(api.createVolume).not.toHaveBeenCalled();
+    expect(api.createWorkspace).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("keeps home writable and submits additional readonly=%s", async (readOnly) => {
     vi.mocked(api.listImages).mockResolvedValue([{ ...images[0], default_homedir: "/home/coder" }]);
     render(<NewWorkspacePage />);

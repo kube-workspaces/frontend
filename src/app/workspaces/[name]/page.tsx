@@ -880,6 +880,7 @@ function OverviewTab({ workspace, images, crData, isWindows, onWorkspaceUpdated 
                       <th className="px-3 py-1.5 font-medium">Type</th>
                       <th className="px-3 py-1.5 font-medium">Status</th>
                       <th className="px-3 py-1.5 font-medium">Reason</th>
+                      <th className="px-3 py-1.5 font-medium">Message</th>
                       <th className="px-3 py-1.5 font-medium">Last Transition</th>
                     </tr>
                   </thead>
@@ -889,6 +890,7 @@ function OverviewTab({ workspace, images, crData, isWindows, onWorkspaceUpdated 
                         <td className="px-3 py-1.5">{c.type}</td>
                         <td className="px-3 py-1.5">{c.status}</td>
                         <td className="px-3 py-1.5">{c.reason || "-"}</td>
+                        <td className="px-3 py-1.5">{c.message || "-"}</td>
                         <td className="px-3 py-1.5 text-gray-500 dark:text-gray-400">
                           {c.last_transition_time ? new Date(c.last_transition_time).toLocaleString() : "-"}
                         </td>
