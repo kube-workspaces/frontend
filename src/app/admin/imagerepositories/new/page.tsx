@@ -74,8 +74,9 @@ export default function NewImageRepositoryPage() {
         </div>
         <div className="p-4 space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+            <label htmlFor="repository-name" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
             <input
+              id="repository-name"
               required
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -83,8 +84,9 @@ export default function NewImageRepositoryPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Repository URL</label>
+            <label htmlFor="repository-url" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Repository URL</label>
             <input
+              id="repository-url"
               required
               value={form.url}
               onChange={(e) => setForm({ ...form, url: e.target.value })}
@@ -93,16 +95,18 @@ export default function NewImageRepositoryPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Ref</label>
+              <label htmlFor="repository-ref" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Ref</label>
               <input
+                id="repository-ref"
                 value={form.ref}
                 onChange={(e) => setForm({ ...form, ref: e.target.value })}
                 className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sync Interval</label>
+              <label htmlFor="repository-interval" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sync Interval</label>
               <input
+                id="repository-interval"
                 value={form.syncInterval}
                 onChange={(e) => setForm({ ...form, syncInterval: e.target.value })}
                 placeholder="10m"
@@ -113,20 +117,21 @@ export default function NewImageRepositoryPage() {
           <RepositoryPathsEditor paths={form.paths} onChange={(paths) => setForm({ ...form, paths })} />
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
+              <label htmlFor="repository-auth" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
               <select
+                id="repository-auth"
                 value={form.authType}
                 onChange={(e) => setForm({ ...form, authType: e.target.value })}
                 className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               >
                 <option value="">None</option>
-                <option value="basic">basic</option>
-                <option value="ssh">ssh</option>
+                <option value="basic">HTTPS basic / token</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Name</label>
+              <label htmlFor="repository-secret" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Name</label>
               <input
+                id="repository-secret"
                 value={form.secretName}
                 onChange={(e) => setForm({ ...form, secretName: e.target.value })}
                 disabled={!form.authType}

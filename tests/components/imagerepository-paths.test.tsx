@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import ImageRepositoryDetailPage from "@/app/admin/imagerepositories/[name]/page";
 import NewImageRepositoryPage from "@/app/admin/imagerepositories/new/page";
@@ -44,4 +44,27 @@ it("uses the default images folder when all path rows are removed on creation", 
   await waitFor(() => expect(api.create).toHaveBeenCalledWith(expect.objectContaining({
     spec: expect.objectContaining({ paths: ["images"] }),
   })));
+});
+
+it("refreshes sync diagnostics without overwriting unsaved paths and offers supported authentication", async () => {
+  vi.useFakeTimers();
+  try {
+    api.get.mockResolvedValueOnce({
+      metadata: { name: "image-catalog", resourceVersion: "123" },
+      spec: { paths: ["images"] },
+    }).mockResolvedValue({
+      metadata: { name: "image-catalog", resourceVersion: "124" },
+      spec: { paths: ["images"] },
+      status: { conditions: [{ type: "Ready", status: "False", reason: "InvalidManifests", message: "Skipped 1 invalid manifest(s); pruning withheld." }] },
+    });
+    await act(async () => { render(<ImageRepositoryDetailPage />); });
+    fireEvent.change(screen.getByRole("textbox", { name: "Repository path 1" }), { target: { value: "draft-folder" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText("Skipped 1 invalid manifest(s); pruning withheld.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Repository path 1" })).toHaveValue("draft-folder");
+    expect(screen.getByRole("option", { name: "HTTPS basic / token", exact: true })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "ssh", exact: true })).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });

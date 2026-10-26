@@ -83,6 +83,24 @@ export default function ImageRepositoryDetailPage() {
     };
   }, [name]);
 
+  // Refresh asynchronous sync status without replacing unsaved form edits.
+  useEffect(() => {
+    if (!name || saving || syncing) return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const data = (await getImageRepository(name)) as ImageRepository;
+        if (!cancelled) setObj(data);
+      } catch {
+        // Keep the last known status; explicit load/save/sync reports errors.
+      }
+    }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [name, saving, syncing]);
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -198,8 +216,9 @@ export default function ImageRepositoryDetailPage() {
           </div>
           <div className="p-4 space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Repository URL</label>
+              <label htmlFor="repository-url" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Repository URL</label>
               <input
+                id="repository-url"
                 type="text"
                 required
                 value={form.url}
@@ -209,8 +228,9 @@ export default function ImageRepositoryDetailPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Ref</label>
+                <label htmlFor="repository-ref" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Ref</label>
                 <input
+                  id="repository-ref"
                   type="text"
                   value={form.ref}
                   onChange={(e) => setForm({ ...form, ref: e.target.value })}
@@ -218,8 +238,9 @@ export default function ImageRepositoryDetailPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sync Interval</label>
+                <label htmlFor="repository-interval" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sync Interval</label>
                 <input
+                  id="repository-interval"
                   type="text"
                   value={form.syncInterval}
                   onChange={(e) => setForm({ ...form, syncInterval: e.target.value })}
@@ -231,20 +252,22 @@ export default function ImageRepositoryDetailPage() {
             <RepositoryPathsEditor paths={form.paths} onChange={(paths) => setForm({ ...form, paths })} />
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
+                <label htmlFor="repository-auth" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
                 <select
+                  id="repository-auth"
                   value={form.authType}
                   onChange={(e) => setForm({ ...form, authType: e.target.value })}
                   className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
                 >
                   <option value="">None</option>
-                  <option value="basic">basic</option>
-                  <option value="ssh">ssh</option>
+                  <option value="basic">HTTPS basic / token</option>
+                  <option value="https-basic">HTTPS basic / token (https-basic)</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Name</label>
+                <label htmlFor="repository-secret" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Name</label>
                 <input
+                  id="repository-secret"
                   type="text"
                   value={form.secretName}
                   onChange={(e) => setForm({ ...form, secretName: e.target.value })}
@@ -293,11 +316,14 @@ export default function ImageRepositoryDetailPage() {
                 <span className="text-gray-900 dark:text-white">{obj?.status?.observedGeneration ?? "—"}</span>
               </div>
               {conditions.map((c, idx) => (
-                <div key={idx} className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">{c.type}</span>
-                  <span className={c.status === "True" ? "text-green-600 dark:text-green-400" : "text-gray-900 dark:text-white"}>
-                    {c.status} {c.reason ? `(${c.reason})` : ""}
-                  </span>
+                <div key={idx}>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">{c.type}</span>
+                    <span className={c.status === "True" ? "text-green-600 dark:text-green-400" : "text-gray-900 dark:text-white"}>
+                      {c.status} {c.reason ? `(${c.reason})` : ""}
+                    </span>
+                  </div>
+                  {c.message && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 break-words">{c.message}</p>}
                 </div>
               ))}
             </div>

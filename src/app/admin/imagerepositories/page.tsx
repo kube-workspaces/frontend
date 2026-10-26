@@ -35,8 +35,8 @@ export default function ImageRepositoriesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      setLoading(true);
+    async function load(quiet = false) {
+      if (!quiet) setLoading(true);
       setError(null);
       try {
         const data = (await listImageRepositories()) as ImageRepository[];
@@ -54,8 +54,10 @@ export default function ImageRepositoriesPage() {
       }
     }
     load();
+    const timer = setInterval(() => load(true), 5000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, []);
 
@@ -154,6 +156,11 @@ export default function ImageRepositoriesPage() {
                     <td className="px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300">{repo.spec?.ref || "main"}</td>
                     <td className="px-4 py-2.5 text-xs">
                       <span className={status.color}>{status.text}</span>
+                      {repo.status?.conditions?.find((c) => c.type === "Ready")?.message && (
+                        <p className="mt-1 max-w-xs text-gray-500 dark:text-gray-400 break-words">
+                          {repo.status.conditions.find((c) => c.type === "Ready")?.message}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">
                       {lastSync ? new Date(lastSync).toLocaleString() : "—"}
@@ -251,8 +258,9 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {error && <div className="text-xs text-red-600 dark:text-red-400">{error}</div>}
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+            <label htmlFor="repository-name" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
             <input
+              id="repository-name"
               required
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -260,8 +268,9 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Repository URL</label>
+            <label htmlFor="repository-url" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Repository URL</label>
             <input
+              id="repository-url"
               required
               value={form.url}
               onChange={(e) => setForm({ ...form, url: e.target.value })}
@@ -270,16 +279,18 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Ref</label>
+              <label htmlFor="repository-ref" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Ref</label>
               <input
+                id="repository-ref"
                 value={form.ref}
                 onChange={(e) => setForm({ ...form, ref: e.target.value })}
                 className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sync Interval</label>
+              <label htmlFor="repository-interval" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Sync Interval</label>
               <input
+                id="repository-interval"
                 value={form.syncInterval}
                 onChange={(e) => setForm({ ...form, syncInterval: e.target.value })}
                 placeholder="10m"
@@ -290,20 +301,21 @@ function AddImageRepositoryModal({ onClose, onCreated }: { onClose: () => void; 
           <RepositoryPathsEditor paths={form.paths} onChange={(paths) => setForm({ ...form, paths })} />
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
+              <label htmlFor="repository-auth" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Auth Type</label>
               <select
+                id="repository-auth"
                 value={form.authType}
                 onChange={(e) => setForm({ ...form, authType: e.target.value })}
                 className="w-full px-2.5 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 text-gray-900 dark:text-white"
               >
                 <option value="">None</option>
-                <option value="basic">basic</option>
-                <option value="ssh">ssh</option>
+                <option value="basic">HTTPS basic / token</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Name</label>
+              <label htmlFor="repository-secret" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Secret Name</label>
               <input
+                id="repository-secret"
                 value={form.secretName}
                 onChange={(e) => setForm({ ...form, secretName: e.target.value })}
                 disabled={!form.authType}
