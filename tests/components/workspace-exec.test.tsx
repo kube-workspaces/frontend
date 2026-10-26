@@ -9,6 +9,8 @@ vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
 
 const workspace: Workspace = { name: "windows-vm", namespace: "demo", type: "vm", vm_profile: "windows11-amd64-v1", image: "windows", ready_replicas: 1, stopped: false };
 const ready = { enabled: true, allow_elevated: true, storage_available: true, storage_mode: "ephemeral", durable: false, issuer_ready: false };
+const linuxWorkspace: Workspace = { ...workspace, name: "linux-vm", vm_profile: undefined, execution_identity: "root" };
+const scriptCaps = { namespace: "demo", workspace_name: "linux-vm", workspace_uid: "uid-1", os_identity: "root", script_supported: true, script_request_version: 2, interpreter_policy: "linux-shebang-v1", max_script_bytes: 65536, reason: "" };
 const result = { execution_id: "exec_test", recording_id: "rec_test", namespace: "demo", workspace_name: "windows-vm", outcome: "succeeded", state: "succeeded", exit_code: 0, stdout: "aMOpbGxvIOKckw==", stderr: "", durability: "none" };
 
 beforeEach(() => {
@@ -21,7 +23,7 @@ beforeEach(() => {
 
 describe("workspace Exec", () => {
   it("uses discovered Linux root identity and sends executable argv without PowerShell", async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(result));
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json({ ...scriptCaps, script_supported: false })).mockResolvedValueOnce(Response.json(result));
     vi.stubGlobal("fetch", fetcher);
     render(<WorkspaceExec workspace={{ ...workspace, name: "linux-vm", vm_profile: undefined, execution_identity: "root" }} />);
     fireEvent.click(screen.getByRole("button", { name: "Exec" }));
@@ -33,7 +35,98 @@ describe("workspace Exec", () => {
     fireEvent.change(screen.getByLabelText("Arguments (JSON array)"), { target: { value: '["-u"]' } });
     fireEvent.click(run);
     await screen.findByText("héllo ✓");
-    expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ namespace: "demo", workspace_name: "linux-vm", executable: "/usr/bin/id", args: ["-u"], deadline_seconds: 20 });
+    expect(JSON.parse(fetcher.mock.calls[2][1].body)).toEqual({ namespace: "demo", workspace_name: "linux-vm", executable: "/usr/bin/id", args: ["-u"], deadline_seconds: 20 });
+  });
+
+  it("offers Script only after matching guest support and submits the full multiline body once", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(scriptCaps)).mockResolvedValueOnce(Response.json(result));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={linuxWorkspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    await screen.findByRole("option", { name: "Script" });
+    expect(fetcher.mock.calls[1][0]).toBe("/api/v1/executions/capabilities?namespace=demo&workspace_name=linux-vm");
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ credentials: "include", cache: "no-store" });
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "script" } });
+    expect(screen.getByLabelText("Script body")).toHaveValue("#!/bin/sh\nprintf 'hello\\n'\n");
+    const body = "#!/usr/bin/python3\nprint('héllo ✓')\n";
+    fireEvent.change(screen.getByLabelText("Script body"), { target: { value: body } });
+    fireEvent.change(screen.getByLabelText("Working directory (optional)"), { target: { value: "/tmp" } });
+    expect(screen.getByText(/Interpreter: \/usr\/bin\/python3/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run as root" }));
+    await screen.findByText("héllo ✓");
+    expect(JSON.parse(fetcher.mock.calls[2][1].body)).toEqual({ namespace: "demo", workspace_name: "linux-vm", deadline_seconds: 20, script: { body, name: "run.sh", cwd: "/tmp" } });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    { ...scriptCaps, script_supported: false },
+    { ...scriptCaps, script_request_version: 1 },
+    { ...scriptCaps, workspace_name: "other-vm" },
+    { ...scriptCaps, interpreter_policy: "unknown" },
+  ])("does not enable Script from incompatible discovery: %j", async (caps) => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(caps));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={linuxWorkspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    await screen.findByText("Guest does not advertise compatible Linux script support.");
+    expect(screen.queryByRole("option", { name: "Script" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run as root" })).toBeEnabled();
+  });
+
+  it("keeps commands usable when an older API cannot discover scripts", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json("not found", { status: 404 })));
+    render(<WorkspaceExec workspace={linuxWorkspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    await screen.findByText(/Script support could not be checked/);
+    expect(screen.queryByRole("option", { name: "Script" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run as root" })).toBeEnabled();
+  });
+
+  it("local script validation permits correction without dispatch or uncertainty", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(scriptCaps)).mockResolvedValueOnce(Response.json(result));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={linuxWorkspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    await screen.findByRole("option", { name: "Script" });
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "script" } });
+    fireEvent.change(screen.getByLabelText("Script body"), { target: { value: "#!/usr/bin/env bash\necho hi\n" } });
+    const run = screen.getByRole("button", { name: "Run as root" });
+    fireEvent.click(run);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The script was not dispatched.");
+    expect(run).toBeEnabled();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    fireEvent.change(screen.getByLabelText("Script body"), { target: { value: "#!/bin/sh\necho hi\n" } });
+    fireEvent.click(run);
+    await screen.findByText("héllo ✓");
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("blocks a selected script if refresh withdraws support and never silently changes modes", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(scriptCaps))
+      .mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json({ ...scriptCaps, script_supported: false }));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={linuxWorkspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    await screen.findByRole("option", { name: "Script" });
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "script" } });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh availability" }));
+    await screen.findByText("Guest does not advertise compatible Linux script support.");
+    expect(screen.getByRole("button", { name: "Run as root" })).toBeDisabled();
+    expect(screen.getByLabelText("Mode")).toHaveValue("script");
+    expect(screen.getByLabelText("Script body")).toBeInTheDocument();
+  });
+
+  it("does not retry or permit a second script submission after response loss", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(scriptCaps)).mockRejectedValueOnce(new TypeError("Network error"));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={linuxWorkspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    await screen.findByRole("option", { name: "Script" });
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "script" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run as root" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The script may have run");
+    expect(screen.getByRole("button", { name: "Run as root" })).toBeDisabled();
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it("does not infer Linux execution support from VM type alone", () => {
@@ -46,6 +139,7 @@ describe("workspace Exec", () => {
     render(<WorkspaceExec workspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "Exec" }));
     expect(screen.getByRole("dialog", { name: "Exec — windows-vm" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Script" })).not.toBeInTheDocument();
     const run = screen.getByRole("button", { name: "Run as SYSTEM" });
     await waitFor(() => expect(run).toBeEnabled());
     fireEvent.change(screen.getByLabelText("PowerShell command"), { target: { value: "Write-Output 'héllo ✓'" } });

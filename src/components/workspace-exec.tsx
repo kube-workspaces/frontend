@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ExecutionStartError, getExecutionStatus, startExecution, type ExecutionCommandResult, type ExecutionStatus, type Workspace } from "@/lib/api";
+import { ExecutionStartError, getExecutionStatus, getExecutionCapabilities, startExecution, type ExecutionCommandResult, type ExecutionStatus, type ExecutionCapabilities, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { canExecuteElevatedCommand, decodeExecutionOutput } from "@/lib/execution";
+import { canExecuteElevatedCommand, decodeExecutionOutput, linuxScriptInterpreter, validateLinuxScript } from "@/lib/execution";
 
 const fieldClass = "mt-1 block w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 p-2 font-mono text-xs disabled:opacity-50";
 
@@ -36,6 +36,8 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
   const submitting = useRef(false);
   const [status, setStatus] = useState<ExecutionStatus | null>(null);
   const [statusError, setStatusError] = useState("");
+  const [capabilities, setCapabilities] = useState<ExecutionCapabilities | null>(null);
+  const [capabilityError, setCapabilityError] = useState("");
   const [statusVersion, setStatusVersion] = useState(0);
   const [mode, setMode] = useState(linux ? "executable" : "powershell");
   const [command, setCommand] = useState("whoami");
@@ -47,8 +49,8 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
   const [error, setError] = useState("");
   const [result, setResult] = useState<ExecutionCommandResult | null>(null);
   const [uncertain, setUncertain] = useState(false);
-  const [scriptBody, setScriptBody] = useState(linux ? "#!/usr/bin/env bash\necho hello\n" : "# PowerShell\nWrite-Output hello\n");
-  const [scriptName, setScriptName] = useState(linux ? "run.sh" : "script.ps1");
+  const [scriptBody, setScriptBody] = useState("#!/bin/sh\nprintf 'hello\\n'\n");
+  const [scriptName, setScriptName] = useState("run.sh");
   const [scriptCwd, setScriptCwd] = useState("");
 
   useEffect(() => {
@@ -66,6 +68,27 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
     })();
     return () => controller.abort();
   }, [statusVersion]);
+  useEffect(() => {
+    const controller = new AbortController();
+    if (linux && !workspace.stopped && status?.enabled && status.allow_elevated && status.storage_available) {
+      void (async () => {
+        try {
+          const next = await getExecutionCapabilities(workspace.namespace, workspace.name, controller.signal);
+          if (!controller.signal.aborted) { setCapabilities(next); setCapabilityError(""); }
+        } catch {
+          if (!controller.signal.aborted) { setCapabilities(null); setCapabilityError("Script support could not be checked. Refresh availability to try again."); }
+        }
+      })();
+    }
+    return () => controller.abort();
+  }, [linux, workspace.namespace, workspace.name, workspace.stopped, status, statusVersion]);
+
+  const scriptSupported = linux && !workspace.stopped && capabilities?.namespace === workspace.namespace
+    && capabilities.workspace_name === workspace.name && capabilities.os_identity === "root"
+    && capabilities.script_supported === true && capabilities.script_request_version === 2
+    && capabilities.interpreter_policy === "linux-shebang-v1" && capabilities.max_script_bytes === 65536;
+  const scriptUnavailable = capabilityError || (scriptSupported ? "" : !capabilities
+    ? "Checking guest script support…" : "Guest does not advertise compatible Linux script support.");
 
   const unavailable = statusError || (!status ? "Checking execution policy and storage…"
     : !status.enabled ? "VM execution is disabled by platform policy."
@@ -75,26 +98,17 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
 
   async function run(event: React.FormEvent) {
     event.preventDefault();
-    if (submitting.current || unavailable || uncertain) return;
+    if (submitting.current || unavailable || uncertain || (mode === "script" && !scriptSupported)) return;
     setError("");
     submitting.current = true;
     setPending(true); setResult(null);
+    let dispatched = false;
     try {
       if (mode === "script") {
         const body = scriptBody;
-        if (body.length === 0) {
-          throw new Error("Script body is required.");
-        }
-        if (new TextEncoder().encode(body).length > 65536) {
-          throw new Error("Script body must be at most 65536 bytes.");
-        }
-        if (body.includes("\u0000")) {
-          throw new Error("Script body contains null bytes.");
-        }
-        const name = scriptName.trim();
-        if (name && (name.includes("/") || name.includes("\\") || name.length > 128)) {
-          throw new Error("Script filename hint is out of bounds.");
-        }
+        const name = scriptName;
+        validateLinuxScript(body, name, scriptCwd);
+        dispatched = true;
         const next = await startExecution({
           namespace: workspace.namespace,
           workspace_name: workspace.name,
@@ -125,6 +139,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
         setPending(false);
         return;
       }
+      dispatched = true;
       const next = await startExecution({
         namespace: workspace.namespace, workspace_name: workspace.name,
         executable: mode === "powershell" ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" : executable,
@@ -133,10 +148,11 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
       setResult(next);
       if (next.outcome === "unknown" || next.state === "recording_lost") setUncertain(true);
     } catch (err) {
-      const notDispatched = err instanceof ExecutionStartError && err.notDispatched;
+      const notDispatched = !dispatched || (err instanceof ExecutionStartError && err.notDispatched);
+      const subject = mode === "script" ? "script" : "command";
       setError(`${err instanceof Error ? err.message : "Command response lost"}. ${notDispatched
-        ? "The command was not dispatched."
-        : "The command may have run; inspect execution history before submitting it again."}`);
+        ? `The ${subject} was not dispatched.`
+        : `The ${subject} may have run; inspect execution history before submitting it again.`}`);
       setUncertain(!notDispatched);
     } finally {
       submitting.current = false; setPending(false);
@@ -155,44 +171,44 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
       <button type="button" onClick={onClose} disabled={pending} className="rounded px-2 py-1 text-xs disabled:opacity-50">Close</button>
     </div>
     <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{workspace.namespace} · {linux ? "Linux" : "Windows"} · {identity} (elevated)</p>
-    <p className="mt-2 text-xs">Run one command with a maximum 20-second deadline and 16 KiB combined output. This MVP has no interactive input or persistent shell.</p>
+    <p className="mt-2 text-xs">Run one command or supported script with a maximum 20-second deadline and 16 KiB combined output. No interactive input or persistent shell.</p>
     {status && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Recording: {status.durable ? "durable" : "ephemeral — history is lost on API restart"} ({status.storage_mode}). Guest/runner readiness is checked when you run.</p>}
     {unavailable && <p role="status" className="mt-3 text-xs text-amber-700 dark:text-amber-400">{unavailable}</p>}
-    <button type="button" disabled={pending} onClick={() => { setStatus(null); setStatusError(""); setStatusVersion((v) => v + 1); }} className="mt-2 text-xs text-[var(--color-primary)]">Refresh availability</button>
+    {linux && !unavailable && scriptUnavailable && <p role="status" className="mt-2 text-xs text-gray-500 dark:text-gray-400">{scriptUnavailable}</p>}
+    <button type="button" disabled={pending} onClick={() => { setStatus(null); setStatusError(""); setCapabilities(null); setCapabilityError(""); setStatusVersion((v) => v + 1); }} className="mt-2 text-xs text-[var(--color-primary)]">Refresh availability</button>
     <form onSubmit={run} className="mt-4 space-y-3">
       <fieldset disabled={pending || uncertain} className="space-y-3 disabled:opacity-60">
-        <label className="block text-xs">Mode<select className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>
+        <div className="text-xs"><label htmlFor="exec-mode">Mode</label><select id="exec-mode" className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>
           {!linux && <option value="powershell">PowerShell command</option>}
           <option value="executable">Executable + arguments</option>
-          <option value="script">Script</option>
-        </select></label>
+          {(scriptSupported || mode === "script") && <option value="script" disabled={!scriptSupported}>Script</option>}
+        </select></div>
         {mode === "powershell" ? <label className="block text-xs">PowerShell command<input required value={command} onChange={(event) => setCommand(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label> : mode === "script" ? <>
           <label className="block text-xs">Script body<textarea required value={scriptBody} onChange={(event) => setScriptBody(event.target.value)} className={fieldClass} rows={8} spellCheck={false} /></label>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block text-xs">Filename hint (optional)<input maxLength={128} value={scriptName} onChange={(event) => setScriptName(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
             <label className="block text-xs">Working directory (optional)<input maxLength={1024} value={scriptCwd} onChange={(event) => setScriptCwd(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Executed via shebang (e.g. #!/usr/bin/env bash, #!/usr/bin/env pwsh). Max 64 KiB.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Interpreter: {linuxScriptInterpreter(scriptBody) ?? "unsupported shebang"} · {new TextEncoder().encode(scriptBody).length} / 65536 UTF-8 bytes. Exact absolute sh/bash/python3 shebang required; no env lookup. JSON escaping has a separate server-side envelope limit. Guest support is checked again on submission.</p>
         </> : <>
           <label className="block text-xs">Executable<input required maxLength={1024} value={executable} onChange={(event) => setExecutable(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
           <label className="block text-xs">Arguments (JSON array)<textarea required value={args} onChange={(event) => setArgs(event.target.value)} className={fieldClass} rows={3} spellCheck={false} /></label>
           <label className="block text-xs">Working directory (optional)<input maxLength={1024} value={cwd} onChange={(event) => setCwd(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
         </>}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {mode !== "script" && mode !== "powershell" ? null : mode === "script" ? <div /> : <div />}
           <label className="block text-xs">Deadline (seconds)<input type="number" required min={1} max={20} value={deadline} onChange={(event) => setDeadline(Number(event.target.value))} className={fieldClass} /></label>
         </div>
       </fieldset>
       {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      <button type="submit" disabled={pending || !!unavailable || uncertain} className="rounded bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{pending ? `Running as ${identity}…` : `Run as ${identity}`}</button>
-      {pending && <p role="status" className="text-xs">Waiting for the recorded result. Closing the page does not cancel the command.</p>}
+      <button type="submit" disabled={pending || !!unavailable || uncertain || (mode === "script" && !scriptSupported)} className="rounded bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{pending ? `Running as ${identity}…` : `Run as ${identity}`}</button>
+      {pending && <p role="status" className="text-xs">Waiting for the recorded result. Closing the page does not cancel the execution.</p>}
     </form>
     {result && <section aria-label="Command result" className="mt-4 space-y-2 border-t border-gray-200 pt-3 text-xs dark:border-gray-700">
       <p role="status" className="font-medium">State: {result.state} · Outcome: {result.outcome}{result.exit_code !== undefined ? ` · Exit code: ${result.exit_code}` : ""}{result.duration_ms !== undefined ? ` · ${result.duration_ms} ms` : ""}</p>
       <p className="break-all font-mono">Execution: {result.execution_id}<br />Recording: {result.recording_id}</p>
       <p>Recording: {result.durability === "durable" ? "durable" : result.durability === "none" ? "ephemeral" : "not reported"}</p>
       {result.denial && <p role="alert" className="text-red-600 dark:text-red-400">{result.denial}</p>}
-      {uncertain && <p role="alert" className="text-amber-700 dark:text-amber-400">Outcome or recording is uncertain. Do not rerun this command; inspect execution history first.</p>}
+      {uncertain && <p role="alert" className="text-amber-700 dark:text-amber-400">Outcome or recording is uncertain. Do not rerun this execution; inspect execution history first.</p>}
       {result.truncated && <p className="text-amber-700 dark:text-amber-400">Output truncated at the 16 KiB combined limit.</p>}
       <h3 className="font-medium">Standard output</h3><pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-100 p-3 dark:bg-gray-950">{output(result.stdout)}</pre>
       <h3 className="font-medium">Standard error</h3><pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-100 p-3 dark:bg-gray-950">{output(result.stderr)}</pre>

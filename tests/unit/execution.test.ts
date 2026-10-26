@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canExecuteElevatedCommand as canExecute, decodeExecutionOutput } from "@/lib/execution";
+import { canExecuteElevatedCommand as canExecute, decodeExecutionOutput, validateLinuxScript, linuxScriptInterpreter } from "@/lib/execution";
 import type { AuthUser } from "@/lib/auth";
 
 const user: AuthUser = {
@@ -31,5 +31,29 @@ describe("elevated command discovery", () => {
   });
   it("decodes base64 as UTF-8 rather than Latin-1", () => {
     expect(decodeExecutionOutput("aMOpbGxvIOKckw==")).toBe("héllo ✓");
+  });
+});
+
+describe("Linux script contract", () => {
+  it("uses only fixed absolute shebangs", () => {
+    for (const interpreter of ["/bin/sh", "/bin/bash", "/usr/bin/bash", "/usr/bin/python3"]) {
+      const body = `#!${interpreter}\necho hi\n`;
+      expect(linuxScriptInterpreter(body)).toBe(interpreter);
+      expect(() => validateLinuxScript(body, "run.sh", "/tmp")).not.toThrow();
+    }
+    for (const body of ["", "#!/usr/bin/env bash\n", "#!/bin/sh -e\n", "#!/bin/sh\r\n", "__proto__", "toString", "#!/bin/sh\nx\0"]) {
+      expect(() => validateLinuxScript(body, "", "")).toThrow();
+    }
+  });
+  it("counts UTF-8 bytes and rejects unsafe basename hints or cwd", () => {
+    const prefix = "#!/bin/sh\n";
+    expect(() => validateLinuxScript(prefix + "x".repeat(65536 - prefix.length), "", "")).not.toThrow();
+    expect(() => validateLinuxScript(prefix + "é".repeat(32764), "", "")).toThrow();
+    for (const name of ["..", ".", "../run.sh", "a\\b", "a:b", " padded ", "a".repeat(129)]) {
+      expect(() => validateLinuxScript(prefix, name, "")).toThrow();
+    }
+    for (const cwd of [" /tmp", "/tmp\n", "é".repeat(513)]) {
+      expect(() => validateLinuxScript(prefix, "", cwd)).toThrow();
+    }
   });
 });

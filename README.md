@@ -48,6 +48,14 @@ Next.js web UI for managing container-based, VM, and scratch workspaces in Kuber
   session stays alive (and can be raised again)
 - **SSH console** - web SSH session into a VM (transient private-key input) with
   SSH key management on the profile page
+- **Recorded VM Exec** - bounded root/SYSTEM commands and Linux Script mode for
+  scoped execution/elevation users. Script appears only after authenticated,
+  workspace-scoped discovery confirms guest request v2/`linux-shebang-v1` support.
+  It accepts multi-line scripts with exact absolute sh/bash/python3 shebangs,
+  shows interpreter/UTF-8 byte count, and shares the 20-second/16-KiB output bounds.
+  Windows scripts and interactive shells are not offered. Availability failures
+  keep Script disabled; commands remain independently usable. Local validation
+  permits correction; response loss or unknown outcomes prevent blind reruns.
 - **YAML viewer** - Raw CR and Pod YAML with "Clean" toggle to strip ephemeral fields
 - **Real-time updates** - Workspace list auto-refreshes every 5 seconds
 

@@ -18,3 +18,27 @@ export function decodeExecutionOutput(value?: string): string {
   if (!value) return "";
   return new TextDecoder().decode(Uint8Array.from(atob(value), (char) => char.charCodeAt(0)));
 }
+
+const linuxInterpreters = new Map([
+  ["#!/bin/sh", "/bin/sh"], ["#!/bin/bash", "/bin/bash"],
+  ["#!/usr/bin/bash", "/usr/bin/bash"], ["#!/usr/bin/python3", "/usr/bin/python3"],
+]);
+
+export function linuxScriptInterpreter(body: string): string | undefined {
+  return linuxInterpreters.get(body.split("\n", 1)[0]);
+}
+
+export function validateLinuxScript(body: string, name: string, cwd: string): void {
+  if (!body || new TextEncoder().encode(body).length > 65536 || body.includes("\u0000")) {
+    throw new Error("Script body must be 1–65536 UTF-8 bytes without null bytes.");
+  }
+  if (!linuxScriptInterpreter(body)) {
+    throw new Error("Use an exact #!/bin/sh, #!/bin/bash, #!/usr/bin/bash or #!/usr/bin/python3 first line, without arguments or CRLF.");
+  }
+  if (name && (name.length > 128 || !/^[A-Za-z0-9._-]+$/.test(name) || name === "." || name === "..")) {
+    throw new Error("Filename hint must be a basename of at most 128 ASCII letters, digits, dots, underscores or hyphens (not . or ..).");
+  }
+  if (cwd && (new TextEncoder().encode(cwd).length > 1024 || cwd.trim() !== cwd || /\p{Cc}/u.test(cwd))) {
+    throw new Error("Working directory must be at most 1024 UTF-8 bytes without padding or control characters.");
+  }
+}

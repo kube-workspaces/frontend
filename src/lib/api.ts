@@ -50,6 +50,25 @@ export async function getExecutionStatus(signal?: AbortSignal): Promise<Executio
   return res.json();
 }
 
+export interface ExecutionCapabilities {
+  namespace: string;
+  workspace_name: string;
+  workspace_uid: string;
+  os_identity: "root" | "SYSTEM";
+  script_supported: boolean;
+  script_request_version: number;
+  interpreter_policy: string;
+  max_script_bytes: number;
+  reason: string;
+}
+
+export async function getExecutionCapabilities(namespace: string, name: string, signal?: AbortSignal): Promise<ExecutionCapabilities> {
+  const query = new URLSearchParams({ namespace, workspace_name: name });
+  const res = await fetch(`${API_BASE}/v1/executions/capabilities?${query}`, { credentials: "include", cache: "no-store", signal });
+  if (!res.ok) throw await apiError(res, "Script capability discovery unavailable");
+  return res.json();
+}
+
 export class ExecutionStartError extends Error {
   readonly notDispatched: boolean;
 
