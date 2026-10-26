@@ -207,6 +207,42 @@ describe("workspace volume creation", () => {
 });
 
 describe("scratch workspace creation", () => {
+  it("preserves catalog command and args by omitting a scratch override", async () => {
+    vi.mocked(api.listImages).mockResolvedValue([{ ...images[0], name: "Injected Alpine", workspace_types: ["container", "scratch"], default_command: ["sleep"], default_args: ["infinity"], default_container_init: { mode: "injected" } }]);
+    render(<NewWorkspacePage />);
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "injected" } });
+    fireEvent.click(screen.getByRole("button", { name: /Scratch Deployment/ }));
+    expect(screen.getByRole("textbox", { name: /Command/ })).toHaveValue("");
+    fireEvent.submit(name.closest("form")!);
+    await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.createWorkspace).mock.calls[0][0].container.command).toBeUndefined();
+  });
+
+  it("preserves shell source and empty arguments in explicit JSON argv", async () => {
+    render(<NewWorkspacePage />);
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "argv" } });
+    fireEvent.click(screen.getByRole("button", { name: /Scratch Deployment/ }));
+    const command = ["/bin/sh", "-c", "printf '%s' \"$1\"", "app", "a b", ""];
+    fireEvent.change(screen.getByRole("textbox", { name: /Command/ }), { target: { value: JSON.stringify(command) } });
+    fireEvent.submit(name.closest("form")!);
+    await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.createWorkspace).mock.calls[0][0].container.command).toEqual(command);
+  });
+
+  it("rejects malformed command overrides before creating resources", async () => {
+    render(<NewWorkspacePage />);
+    const name = await screen.findByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "invalid" } });
+    fireEvent.click(screen.getByRole("button", { name: /Scratch Deployment/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Command/ }), { target: { value: "sh -c 'echo hello'" } });
+    fireEvent.submit(name.closest("form")!);
+    expect(await screen.findByText(/Command override must be a JSON argv array/)).toBeInTheDocument();
+    expect(api.createWorkspace).not.toHaveBeenCalled();
+    expect(api.createVolume).not.toHaveBeenCalled();
+  });
+
   it("offers supported catalog images and submits an edited custom command", async () => {
     vi.mocked(api.listImages).mockResolvedValue(images);
     render(<NewWorkspacePage />);
@@ -215,10 +251,10 @@ describe("scratch workspace creation", () => {
     fireEvent.click(screen.getByRole("button", { name: /Scratch Deployment/ }));
     expect(screen.getByRole("radio", { name: /Alpine Linux/ })).toBeChecked();
     expect(screen.queryByRole("radio", { name: /Code Studio/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: /Command/ })).toHaveValue("sleep infinity");
+    expect(screen.getByRole("textbox", { name: /Command/ })).toHaveValue("");
     fireEvent.click(screen.getByRole("button", { name: "Custom Image" }));
     expect(screen.getByRole("textbox", { name: "Image" })).toHaveValue("alpine");
-    fireEvent.change(screen.getByRole("textbox", { name: /Command/ }), { target: { value: "sleep 3600" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Command/ }), { target: { value: '["sleep","3600"]' } });
     fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({
       type: "scratch", container: expect.objectContaining({ image: "alpine", command: ["sleep", "3600"] }),
@@ -234,7 +270,7 @@ describe("scratch workspace creation", () => {
     const imageInput = screen.getByRole("textbox", { name: "Image" });
     expect(imageInput).toHaveValue("alpine");
     const commandInput = screen.getByRole("textbox", { name: /Command/ });
-    expect(commandInput).toHaveValue("sleep infinity");
+    expect(commandInput).toHaveValue('["sleep","infinity"]');
     fireEvent.submit(nameInput.closest("form")!);
     await waitFor(() => expect(api.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({
       name: "myscratch",

@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { useNamespace } from "@/lib/namespace";
 import VMGPUProfileSelect from "@/components/vm-gpu-profile-select";
+import { parseWorkspaceCommand } from "@/lib/workspace-command";
 
 // Scheduling presets define common node affinity/toleration configurations
 interface SchedulingPreset {
@@ -97,7 +98,7 @@ function NewWorkspaceForm() {
   const [selectedImage, setSelectedImage] = useState<WorkspaceImage | null>(null);
   const [scratchImage, setScratchImage] = useState("alpine");
   const [scratchImageMode, setScratchImageMode] = useState<"catalog" | "custom">("catalog");
-  const [command, setCommand] = useState("sleep infinity");
+  const [command, setCommand] = useState("");
   const scratchImages = filterImagesByType(images, "scratch");
 
   // Form field locks (admin-controlled)
@@ -133,9 +134,7 @@ function NewWorkspaceForm() {
     } else if (image) {
       setSelectedVolumes((v) => applyHomeVolume(image, name, v));
       setShmEnabled(image.default_shared_memory ?? false);
-      if (image.default_args && image.default_args.length > 0) {
-        setCommand(image.default_args.join(" "));
-      }
+      setCommand("");
     }
   };
 
@@ -147,6 +146,7 @@ function NewWorkspaceForm() {
       if (sImages.length > 0 && scratchImageMode === "catalog") {
         chooseImage(sImages[0]);
       } else {
+        setCommand('["sleep","infinity"]');
         setSelectedImage({
           cr_name: "scratch",
           name: "Scratch",
@@ -176,6 +176,7 @@ function NewWorkspaceForm() {
     if (mode === "catalog" && sImages.length > 0) {
       chooseImage(sImages[0]);
     } else {
+      setCommand('["sleep","infinity"]');
       setSelectedImage({
         cr_name: "scratch",
         name: "Scratch",
@@ -290,6 +291,7 @@ function NewWorkspaceForm() {
     setError(null);
 
     try {
+      const commandOverride = workspaceType === "scratch" ? parseWorkspaceCommand(command) : undefined;
       const volumeMounts = await Promise.all(
         selectedVolumes.map(async (v) => {
           if (v.isNew && v.name) {
@@ -343,7 +345,7 @@ function NewWorkspaceForm() {
           cpu_limit: cpuLimit,
           memory_limit: memoryLimit,
           ...(!isWindows && gpuEnabled && gpuCount ? { gpu_request: gpuCount, gpu_vendor: gpuVendor } : {}),
-          ...(workspaceType === "scratch" && command.trim() ? { command: command.trim().split(/\s+/) } : {}),
+          ...(commandOverride ? { command: commandOverride } : {}),
         },
         volume_mounts: volumeMounts,
         ...(filteredEnv.length > 0 ? { env: filteredEnv } : {}),
@@ -590,16 +592,16 @@ function NewWorkspaceForm() {
 
         {workspaceType === "scratch" && (
           <div>
-            <label htmlFor="scratchCommand" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Command (arguments)</label>
+            <label htmlFor="scratchCommand" className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Command override (JSON argv)</label>
             <input
               type="text"
               id="scratchCommand"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              placeholder="sleep infinity"
+              placeholder='Leave empty to use image defaults'
               className={inputClass}
             />
-            <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">Command passed to the container (space-separated, e.g. sleep infinity).</p>
+            <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">Leave empty to preserve image startup and catalog arguments. Override with a JSON array, e.g. {`["sleep","infinity"]`}. Shell scripts must be one argument after {`["/bin/sh","-c", ...]`}.</p>
           </div>
         )}
 

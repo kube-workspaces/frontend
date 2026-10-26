@@ -281,6 +281,7 @@ export interface VolumeMount {
 }
 
 export type WorkspaceType = "container" | "vm" | "scratch";
+export type ContainerInitMode = "disabled" | "injected" | "baked-in";
 
 export interface CreateWorkspacePayload {
   name: string;
@@ -305,6 +306,7 @@ export interface CreateWorkspacePayload {
   node_selector?: Record<string, string>;
   shared_memory?: boolean;
   image_pull_policy?: string;
+  container_init?: { mode: ContainerInitMode; user_data?: string; user_data_secret?: string };
   vm_options?: {
     gpu_profile?: string;
     import_secret_name?: string;
@@ -406,6 +408,8 @@ export interface WorkspaceImage {
   default_shared_memory?: boolean;
   workspace_types?: string[];
   default_args?: string[];
+  default_command?: string[];
+  default_container_init?: { mode: ContainerInitMode };
   links?: ImageLink[];
   default_credentials?: ImageCredentials;
   vm_profile?: string;
@@ -438,6 +442,8 @@ export interface CreateImagePayload {
   default_path?: string;
   icon?: string;
   default_args?: string[];
+  default_command?: string[];
+  default_container_init?: { mode: ContainerInitMode };
   default_env?: ImageEnvVar[];
   privileged?: boolean;
   homepage_url?: string;
