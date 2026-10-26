@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ExecutionStartError, getExecutionStatus, getExecutionCapabilities, startExecution, type ExecutionCommandResult, type ExecutionStatus, type ExecutionCapabilities, type Workspace } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { canExecuteElevatedCommand, decodeExecutionOutput, linuxScriptInterpreter, validateLinuxScript } from "@/lib/execution";
+import { canExecuteElevatedCommand, decodeExecutionOutput, linuxScriptInterpreter, windowsScriptInterpreter, validateLinuxScript, validateWindowsScript } from "@/lib/execution";
 
 const fieldClass = "mt-1 block w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 p-2 font-mono text-xs disabled:opacity-50";
 
@@ -49,8 +49,8 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
   const [error, setError] = useState("");
   const [result, setResult] = useState<ExecutionCommandResult | null>(null);
   const [uncertain, setUncertain] = useState(false);
-  const [scriptBody, setScriptBody] = useState("#!/bin/sh\nprintf 'hello\\n'\n");
-  const [scriptName, setScriptName] = useState("run.sh");
+  const [scriptBody, setScriptBody] = useState(linux ? "#!/bin/sh\nprintf 'hello\\n'\n" : "#!powershell\nWrite-Output 'hello'\n");
+  const [scriptName, setScriptName] = useState(linux ? "run.sh" : "run.ps1");
   const [scriptCwd, setScriptCwd] = useState("");
 
   useEffect(() => {
@@ -70,7 +70,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
   }, [statusVersion]);
   useEffect(() => {
     const controller = new AbortController();
-    if (linux && !workspace.stopped && status?.enabled && status.allow_elevated && status.storage_available) {
+    if (!workspace.stopped && status?.enabled && status.allow_elevated && status.storage_available) {
       void (async () => {
         try {
           const next = await getExecutionCapabilities(workspace.namespace, workspace.name, controller.signal);
@@ -83,12 +83,12 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
     return () => controller.abort();
   }, [linux, workspace.namespace, workspace.name, workspace.stopped, status, statusVersion]);
 
-  const scriptSupported = linux && !workspace.stopped && capabilities?.namespace === workspace.namespace
-    && capabilities.workspace_name === workspace.name && capabilities.os_identity === "root"
+  const scriptSupported = !workspace.stopped && capabilities?.namespace === workspace.namespace
+    && capabilities.workspace_name === workspace.name && capabilities.os_identity === identity
     && capabilities.script_supported === true && capabilities.script_request_version === 2
-    && capabilities.interpreter_policy === "linux-shebang-v1" && capabilities.max_script_bytes === 65536;
+    && capabilities.interpreter_policy === (linux ? "linux-shebang-v1" : "windows-powershell-v1") && capabilities.max_script_bytes === 65536;
   const scriptUnavailable = capabilityError || (scriptSupported ? "" : !capabilities
-    ? "Checking guest script support…" : "Guest does not advertise compatible Linux script support.");
+    ? "Checking guest script support…" : `Guest does not advertise compatible ${linux ? "Linux" : "Windows PowerShell"} script support.`);
 
   const unavailable = statusError || (!status ? "Checking execution policy and storage…"
     : !status.enabled ? "VM execution is disabled by platform policy."
@@ -107,7 +107,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
       if (mode === "script") {
         const body = scriptBody;
         const name = scriptName;
-        validateLinuxScript(body, name, scriptCwd);
+        (linux ? validateLinuxScript : validateWindowsScript)(body, name, scriptCwd);
         dispatched = true;
         const next = await startExecution({
           namespace: workspace.namespace,
@@ -174,7 +174,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
     <p className="mt-2 text-xs">Run one command or supported script with a maximum 20-second deadline and 16 KiB combined output. No interactive input or persistent shell.</p>
     {status && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Recording: {status.durable ? "durable" : "ephemeral — history is lost on API restart"} ({status.storage_mode}). Guest/runner readiness is checked when you run.</p>}
     {unavailable && <p role="status" className="mt-3 text-xs text-amber-700 dark:text-amber-400">{unavailable}</p>}
-    {linux && !unavailable && scriptUnavailable && <p role="status" className="mt-2 text-xs text-gray-500 dark:text-gray-400">{scriptUnavailable}</p>}
+    {!unavailable && scriptUnavailable && <p role="status" className="mt-2 text-xs text-gray-500 dark:text-gray-400">{scriptUnavailable}</p>}
     <button type="button" disabled={pending} onClick={() => { setStatus(null); setStatusError(""); setCapabilities(null); setCapabilityError(""); setStatusVersion((v) => v + 1); }} className="mt-2 text-xs text-[var(--color-primary)]">Refresh availability</button>
     <form onSubmit={run} className="mt-4 space-y-3">
       <fieldset disabled={pending || uncertain} className="space-y-3 disabled:opacity-60">
@@ -189,7 +189,7 @@ function ExecDialog({ workspace, onClose }: { workspace: Workspace; onClose: () 
             <label className="block text-xs">Filename hint (optional)<input maxLength={128} value={scriptName} onChange={(event) => setScriptName(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
             <label className="block text-xs">Working directory (optional)<input maxLength={1024} value={scriptCwd} onChange={(event) => setScriptCwd(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Interpreter: {linuxScriptInterpreter(scriptBody) ?? "unsupported shebang"} · {new TextEncoder().encode(scriptBody).length} / 65536 UTF-8 bytes. Exact absolute sh/bash/python3 shebang required; no env lookup. JSON escaping has a separate server-side envelope limit. Guest support is checked again on submission.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Interpreter: {(linux ? linuxScriptInterpreter : windowsScriptInterpreter)(scriptBody) ?? "unsupported shebang"} · {new TextEncoder().encode(scriptBody).length} / 65536 UTF-8 bytes. {linux ? "Exact absolute sh/bash/python3 shebang required; no env lookup." : "Use #!powershell; the guest runs a private .ps1 with fixed Windows PowerShell -File arguments."} JSON escaping has a separate server-side envelope limit. Guest support is checked again on submission.</p>
         </> : <>
           <label className="block text-xs">Executable<input required maxLength={1024} value={executable} onChange={(event) => setExecutable(event.target.value)} className={fieldClass} autoComplete="off" spellCheck={false} /></label>
           <label className="block text-xs">Arguments (JSON array)<textarea required value={args} onChange={(event) => setArgs(event.target.value)} className={fieldClass} rows={3} spellCheck={false} /></label>

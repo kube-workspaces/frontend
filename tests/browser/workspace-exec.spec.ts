@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-for (const { linux, script } of [{ linux: false, script: false }, { linux: true, script: false }, { linux: true, script: true }]) {
+for (const { linux, script } of [{ linux: false, script: false }, { linux: true, script: false }, { linux: true, script: true }, { linux: false, script: true }]) {
 test(`${linux ? "Linux" : "Windows"} workspace Exec opens a modal and displays a ${script ? "script" : "command"} result`, async ({ page, context }) => {
   await context.addCookies([{ name: "kw-session", value: "demo-fixture", domain: "127.0.0.1", path: "/" }]);
   const name = linux ? "linux-vm" : "windows-vm";
   const identity = linux ? "root" : "SYSTEM";
   const workspace = { name, namespace: "demo", type: "vm", vm_profile: linux ? undefined : "windows11-amd64-v1", execution_identity: identity, image: linux ? "linux" : "windows", ready_replicas: 1, stopped: false };
   let starts = 0;
-  const body = "#!/usr/bin/python3\nprint('script ✓')\n";
+  const body = linux ? "#!/usr/bin/python3\nprint('script ✓')\n" : "#!powershell\nWrite-Output 'script ✓'\n";
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api(?=\/)/, "");
@@ -22,14 +22,14 @@ test(`${linux ? "Linux" : "Windows"} workspace Exec opens a modal and displays a
       expect(route.request().method()).toBe("GET");
       expect(url.searchParams.get("namespace")).toBe("demo");
       expect(url.searchParams.get("workspace_name")).toBe(name);
-      return json({ namespace: "demo", workspace_name: name, workspace_uid: "uid-1", os_identity: "root", script_supported: script,
-        script_request_version: script ? 2 : 0, interpreter_policy: script ? "linux-shebang-v1" : "", max_script_bytes: script ? 65536 : 0, reason: script ? "" : "Guest does not advertise compatible script support." });
+      return json({ namespace: "demo", workspace_name: name, workspace_uid: "uid-1", os_identity: identity, script_supported: script,
+        script_request_version: script ? 2 : 0, interpreter_policy: script ? (linux ? "linux-shebang-v1" : "windows-powershell-v1") : "", max_script_bytes: script ? 65536 : 0, reason: script ? "" : "Guest does not advertise compatible script support." });
     }
     if (path === "/v1/executions/start") {
       starts++;
       expect(route.request().method()).toBe("POST");
       if (script) {
-        expect(route.request().postDataJSON()).toEqual({ namespace: "demo", workspace_name: name, deadline_seconds: 20, script: { body, name: "run.sh", cwd: "/tmp" } });
+        expect(route.request().postDataJSON()).toEqual({ namespace: "demo", workspace_name: name, deadline_seconds: 20, script: { body, name: linux ? "run.sh" : "run.ps1", cwd: linux ? "/tmp" : "C:\\Temp" } });
       } else {
         expect(route.request().postDataJSON()).toMatchObject({ namespace: "demo", workspace_name: name, ...(linux ? { executable: "/usr/bin/id" } : {}), args: linux ? ["-u"] : ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "hostname"], deadline_seconds: 20 });
       }
@@ -48,8 +48,8 @@ test(`${linux ? "Linux" : "Windows"} workspace Exec opens a modal and displays a
     await expect(modal.getByRole("option", { name: "Script", exact: true })).toHaveCount(1);
     await modal.getByLabel("Mode", { exact: true }).selectOption("script");
     await modal.getByRole("textbox", { name: "Script body", exact: true }).fill(body);
-    await modal.getByRole("textbox", { name: "Working directory (optional)", exact: true }).fill("/tmp");
-    await expect(modal.getByText(/Interpreter: \/usr\/bin\/python3/)).toBeVisible();
+    await modal.getByRole("textbox", { name: "Working directory (optional)", exact: true }).fill(linux ? "/tmp" : "C:\\Temp");
+    await expect(modal.getByText(linux ? /Interpreter: \/usr\/bin\/python3/ : /Interpreter: Windows PowerShell/)).toBeVisible();
   } else if (linux) {
     await modal.getByRole("textbox", { name: "Arguments (JSON array)", exact: true }).fill('["-u"]');
     await expect(modal.getByRole("option", { name: "PowerShell command" })).toHaveCount(0);

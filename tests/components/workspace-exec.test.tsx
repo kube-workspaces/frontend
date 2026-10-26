@@ -11,6 +11,8 @@ const workspace: Workspace = { name: "windows-vm", namespace: "demo", type: "vm"
 const ready = { enabled: true, allow_elevated: true, storage_available: true, storage_mode: "ephemeral", durable: false, issuer_ready: false };
 const linuxWorkspace: Workspace = { ...workspace, name: "linux-vm", vm_profile: undefined, execution_identity: "root" };
 const scriptCaps = { namespace: "demo", workspace_name: "linux-vm", workspace_uid: "uid-1", os_identity: "root", script_supported: true, script_request_version: 2, interpreter_policy: "linux-shebang-v1", max_script_bytes: 65536, reason: "" };
+const windowsCaps = { ...scriptCaps, workspace_name: "windows-vm", os_identity: "SYSTEM", interpreter_policy: "windows-powershell-v1" };
+const windowsUnsupported = { ...windowsCaps, script_supported: false, script_request_version: 0, interpreter_policy: "", max_script_bytes: 0 };
 const result = { execution_id: "exec_test", recording_id: "rec_test", namespace: "demo", workspace_name: "windows-vm", outcome: "succeeded", state: "succeeded", exit_code: 0, stdout: "aMOpbGxvIOKckw==", stderr: "", durability: "none" };
 
 beforeEach(() => {
@@ -134,7 +136,7 @@ describe("workspace Exec", () => {
     expect(screen.queryByRole("button", { name: "Exec" })).not.toBeInTheDocument();
   });
   it("opens a modal, executes once with exact workspace scope, and renders decoded output", async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(result));
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(windowsUnsupported)).mockResolvedValueOnce(Response.json(result));
     vi.stubGlobal("fetch", fetcher);
     render(<WorkspaceExec workspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "Exec" }));
@@ -146,15 +148,15 @@ describe("workspace Exec", () => {
     fireEvent.click(run);
     expect(await screen.findByText("héllo ✓")).toBeInTheDocument();
     expect(screen.getByText(/Exit code: 0/)).toBeInTheDocument();
-    const [url, options] = fetcher.mock.calls[1];
+    const [url, options] = fetcher.mock.calls[2];
     expect(url).toBe("/api/v1/executions/start");
     expect(options.credentials).toBe("include");
     expect(JSON.parse(options.body)).toEqual({ namespace: "demo", workspace_name: "windows-vm", executable: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Write-Output 'héllo ✓'"], deadline_seconds: 20 });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it("passes executable arguments verbatim and surfaces nonzero results and truncation", async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json({ ...result, state: "failed", outcome: "failed", exit_code: 7, truncated: true, stderr: "ZXJyb3I=" }));
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(windowsUnsupported)).mockResolvedValueOnce(Response.json({ ...result, state: "failed", outcome: "failed", exit_code: 7, truncated: true, stderr: "ZXJyb3I=" }));
     vi.stubGlobal("fetch", fetcher);
     render(<WorkspaceExec workspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "Exec" }));
@@ -165,7 +167,7 @@ describe("workspace Exec", () => {
     expect(await screen.findByText(/Exit code: 7/)).toBeInTheDocument();
     expect(screen.getByText("error")).toBeInTheDocument();
     expect(screen.getByText(/Output truncated/)).toBeInTheDocument();
-    expect(JSON.parse(fetcher.mock.calls[1][1].body).args).toEqual(["argument with spaces", "", "a&b"]);
+    expect(JSON.parse(fetcher.mock.calls[2][1].body).args).toEqual(["argument with spaces", "", "a&b"]);
   });
 
   it("shows policy denial and does not dispatch", async () => {
@@ -179,7 +181,7 @@ describe("workspace Exec", () => {
   });
 
   it("does not retry a lost response or allow a blind second submission", async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockRejectedValueOnce(new TypeError("Network error"));
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(windowsUnsupported)).mockRejectedValueOnce(new TypeError("Network error"));
     vi.stubGlobal("fetch", fetcher);
     render(<WorkspaceExec workspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "Exec" }));
@@ -188,11 +190,12 @@ describe("workspace Exec", () => {
     fireEvent.click(run);
     expect(await screen.findByRole("alert")).toHaveTextContent("The command may have run");
     expect(run).toBeDisabled();
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it.each([400, 401, 403, 404])("reports HTTP %s as a pre-dispatch rejection and permits an explicit retry", async (status) => {
     const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready))
+      .mockResolvedValueOnce(Response.json(windowsUnsupported))
       .mockResolvedValueOnce(Response.json("not an eligible running Windows VM", { status }))
       .mockResolvedValueOnce(Response.json(result));
     vi.stubGlobal("fetch", fetcher);
@@ -204,14 +207,15 @@ describe("workspace Exec", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Command request failed: not an eligible running Windows VM. The command was not dispatched.");
     expect(screen.queryByText(/The command may have run/)).not.toBeInTheDocument();
     expect(run).toBeEnabled();
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     fireEvent.click(run);
     expect(await screen.findByText("héllo ✓")).toBeInTheDocument();
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenCalledTimes(4);
   });
 
   it("keeps a server failure uncertain because it can occur after dispatch", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready))
+      .mockResolvedValueOnce(Response.json(windowsUnsupported))
       .mockResolvedValueOnce(Response.json("execution recording unavailable", { status: 503 }));
     vi.stubGlobal("fetch", fetcher);
     render(<WorkspaceExec workspace={workspace} />);
@@ -221,7 +225,27 @@ describe("workspace Exec", () => {
     fireEvent.click(run);
     expect(await screen.findByRole("alert")).toHaveTextContent("The command may have run");
     expect(run).toBeDisabled();
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("offers Windows Script only for the matching SYSTEM PowerShell policy", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(ready)).mockResolvedValueOnce(Response.json(windowsCaps)).mockResolvedValueOnce(Response.json(result));
+    vi.stubGlobal("fetch", fetcher);
+    render(<WorkspaceExec workspace={workspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "Exec" }));
+    await screen.findByRole("option", { name: "Script" });
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "script" } });
+    expect(screen.getByLabelText("Script body")).toHaveValue("#!powershell\nWrite-Output 'hello'\n");
+    fireEvent.change(screen.getByLabelText("Script body"), { target: { value: "#!/usr/bin/env pwsh\nWrite-Output hi\n" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run as SYSTEM" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The script was not dispatched");
     expect(fetcher).toHaveBeenCalledTimes(2);
+    const body = "#!powershell\r\nWrite-Output 'héllo ✓'\r\n";
+    fireEvent.change(screen.getByLabelText("Script body"), { target: { value: body } });
+    fireEvent.click(screen.getByRole("button", { name: "Run as SYSTEM" }));
+    await screen.findByText("héllo ✓");
+    // Textareas normalize CRLF to LF before the submitted body is signed.
+    expect(JSON.parse(fetcher.mock.calls[2][1].body)).toEqual({ namespace: "demo", workspace_name: "windows-vm", deadline_seconds: 20, script: { body: body.replaceAll("\r\n", "\n"), name: "run.ps1" } });
   });
 
   it("hides exec without scoped authority and disables it while stopped", () => {

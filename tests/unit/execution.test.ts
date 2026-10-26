@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canExecuteElevatedCommand as canExecute, decodeExecutionOutput, validateLinuxScript, linuxScriptInterpreter } from "@/lib/execution";
+import { canExecuteElevatedCommand as canExecute, decodeExecutionOutput, validateLinuxScript, linuxScriptInterpreter, validateWindowsScript, windowsScriptInterpreter } from "@/lib/execution";
 import type { AuthUser } from "@/lib/auth";
 
 const user: AuthUser = {
@@ -55,5 +55,18 @@ describe("Linux script contract", () => {
     for (const cwd of [" /tmp", "/tmp\n", "é".repeat(513)]) {
       expect(() => validateLinuxScript(prefix, "", cwd)).toThrow();
     }
+  });
+});
+
+describe("Windows PowerShell script policy", () => {
+  it("accepts the fixed marker with LF or CRLF and no interpreter argv", () => {
+    for (const body of ["#!powershell\nWrite-Output hi\n", "#!powershell\r\nWrite-Output 'héllo'\r\n"]) {
+      expect(windowsScriptInterpreter(body)).toBe("Windows PowerShell");
+      expect(() => validateWindowsScript(body, "run.ps1", "C:\\Temp")).not.toThrow();
+    }
+    for (const body of ["#!/usr/bin/env pwsh\n", "#!powershell -Command\n", "#!powershell\r\r\n", "#!/bin/sh\n", "\ufeff#!powershell\n"]) {
+      expect(() => validateWindowsScript(body, "", "")).toThrow();
+    }
+    expect(() => validateWindowsScript("#!powershell\n" + "é".repeat(32768), "", "")).toThrow();
   });
 });

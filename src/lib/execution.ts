@@ -29,11 +29,24 @@ export function linuxScriptInterpreter(body: string): string | undefined {
 }
 
 export function validateLinuxScript(body: string, name: string, cwd: string): void {
-  if (!body || new TextEncoder().encode(body).length > 65536 || body.includes("\u0000")) {
-    throw new Error("Script body must be 1–65536 UTF-8 bytes without null bytes.");
-  }
+  validateScriptBounds(body, name, cwd);
   if (!linuxScriptInterpreter(body)) {
     throw new Error("Use an exact #!/bin/sh, #!/bin/bash, #!/usr/bin/bash or #!/usr/bin/python3 first line, without arguments or CRLF.");
+  }
+}
+
+export function windowsScriptInterpreter(body: string): string | undefined {
+  return body.split("\n", 1)[0].replace(/\r$/, "") === "#!powershell" ? "Windows PowerShell" : undefined;
+}
+
+export function validateWindowsScript(body: string, name: string, cwd: string): void {
+  validateScriptBounds(body, name, cwd);
+  if (!windowsScriptInterpreter(body)) throw new Error("Use an exact #!powershell first line; interpreter arguments and pwsh/env lookup are unsupported.");
+}
+
+function validateScriptBounds(body: string, name: string, cwd: string): void {
+  if (!body || new TextEncoder().encode(body).length > 65536 || body.includes("\u0000")) {
+    throw new Error("Script body must be 1–65536 UTF-8 bytes without null bytes.");
   }
   if (name && (name.length > 128 || !/^[A-Za-z0-9._-]+$/.test(name) || name === "." || name === "..")) {
     throw new Error("Filename hint must be a basename of at most 128 ASCII letters, digits, dots, underscores or hyphens (not . or ..).");

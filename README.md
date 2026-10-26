@@ -48,12 +48,15 @@ Next.js web UI for managing container-based, VM, and scratch workspaces in Kuber
   session stays alive (and can be raised again)
 - **SSH console** - web SSH session into a VM (transient private-key input) with
   SSH key management on the profile page
-- **Recorded VM Exec** - bounded root/SYSTEM commands and Linux Script mode for
+- **Recorded VM Exec** - bounded root/SYSTEM commands and OS-specific Script mode for
   scoped execution/elevation users. Script appears only after authenticated,
-  workspace-scoped discovery confirms guest request v2/`linux-shebang-v1` support.
+  workspace-scoped discovery confirms guest request v2 with `linux-shebang-v1`
+  (root) or `windows-powershell-v1` (SYSTEM) support.
   It accepts multi-line scripts with exact absolute sh/bash/python3 shebangs,
-  shows interpreter/UTF-8 byte count, and shares the 20-second/16-KiB output bounds.
-  Windows scripts and interactive shells are not offered. Availability failures
+  or the Windows `#!powershell` marker, shows interpreter/UTF-8 byte count, and
+  shares the 20-second/16-KiB output bounds. Windows uses a private `.ps1` and fixed
+  Windows PowerShell `-File` arguments, without `pwsh`/PATH lookup. Interactive
+  shells are not offered. Availability failures
   keep Script disabled; commands remain independently usable. Local validation
   permits correction; response loss or unknown outcomes prevent blind reruns.
 - **YAML viewer** - Raw CR and Pod YAML with "Clean" toggle to strip ephemeral fields
