@@ -524,6 +524,10 @@ export default function AgentDisplay({
       if (msg.type === "resizeAck") {
         const payload = (msg.payload ?? {}) as { requestId?: unknown; reason?: unknown; actual?: unknown };
         const id = typeof payload.requestId === "string" ? payload.requestId : "";
+        // Fence readback and canvas side effects as well as reducer state.
+        // Late/superseded ACKs (or unsolicited controller ACKs on observers)
+        // must not crop the current output or poison future frame dimensions.
+        if (!resolutionRef.current.pending || resolutionRef.current.pending.id !== id) return;
         const actual = parseGuestMode(payload.actual);
         if (actual) {
           guestModeRef.current = actual;
